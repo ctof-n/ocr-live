@@ -13,6 +13,9 @@ const sourceEl = document.querySelector("#source");
 const targetEl = document.querySelector("#target");
 const fpsEl = document.querySelector("#fps");
 const fpsValueEl = document.querySelector("#fps-value");
+const minWordsEl = document.querySelector("#min-words");
+
+const SETTINGS_KEY = "ocr-live.settings";
 
 let socket = null;
 let objectUrl = null;
@@ -21,6 +24,47 @@ let boxes = [];
 let analyzeTimer = 0;
 let analyzeBusy = false;
 const grabCanvas = document.createElement("canvas");
+
+function loadSettings() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    return stored && typeof stored === "object" ? stored : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSettings() {
+  const settings = {
+    source: sourceEl.value,
+    target: targetEl.value,
+    fps: selectedFps(),
+    minWords: selectedMinWords(),
+    windowId: windowsEl.value,
+  };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+function applySettings() {
+  const settings = loadSettings();
+  const sourceOk = [...sourceEl.options].some((option) => option.value === settings.source);
+  if (sourceOk) sourceEl.value = settings.source;
+  const targetOk = [...targetEl.options].some((option) => option.value === settings.target);
+  if (targetOk) targetEl.value = settings.target;
+  if (Number.isFinite(settings.fps)) {
+    fpsEl.value = String(Math.min(30, Math.max(1, Math.round(settings.fps))));
+  }
+  if (Number.isFinite(settings.minWords)) {
+    minWordsEl.value = String(Math.min(99, Math.max(1, Math.round(settings.minWords))));
+  }
+  syncFpsLabel();
+}
+
+function restoreWindow(windowId) {
+  if (!windowId) return;
+  const match = [...windowsEl.options].find((option) => option.value === String(windowId));
+  if (match) windowsEl.value = match.value;
+}
 
 function setStatus(text, isError = false) {
   statusEl.textContent = text;
@@ -33,8 +77,14 @@ function selectedFps() {
   return Math.min(30, Math.max(1, Math.round(value)));
 }
 
+function selectedMinWords() {
+  const value = Number(minWordsEl.value);
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(99, Math.max(1, Math.round(value)));
+}
+
 function streamQuery() {
-  return `source=${encodeURIComponent(sourceEl.value)}&target=${encodeURIComponent(targetEl.value)}&fps=${selectedFps()}`;
+  return `source=${encodeURIComponent(sourceEl.value)}&target=${encodeURIComponent(targetEl.value)}&fps=${selectedFps()}&min_words=${selectedMinWords()}`;
 }
 
 function syncFpsLabel() {
@@ -50,6 +100,38 @@ function startAnalyzeTimer() {
   analyzeTimer = window.setInterval(() => {
     sendVideoFrame().catch(() => {});
   }, analyzeIntervalMs());
+}
+
+function connectAnalyzeSocket() {
+  const protocol = location.protocol === "https:" ? "wss" : "ws";
+  const current = new WebSocket(`${protocol}://${location.host}/ws/analyze?${streamQuery()}`);
+  socket = current;
+  socket.binaryType = "blob";
+  socket.addEventListener("message", handleSocketMessage);
+  socket.addEventListener("open", startAnalyzeTimer);
+  socket.addEventListener("close", () => {
+    if (socket !== current) return;
+    window.clearInterval(analyzeTimer);
+    analyzeTimer = 0;
+  });
+}
+
+function restartAnalyzeSocket() {
+  if (socket) {
+    const old = socket;
+    socket = null;
+    old.close();
+  }
+  connectAnalyzeSocket();
+}
+
+function applyMinWords() {
+  minWordsEl.value = String(selectedMinWords());
+  if (browserStream) {
+    restartAnalyzeSocket();
+    return;
+  }
+  if (socket && windowsEl.value) startNativeStream();
 }
 
 function showNativeFrame() {
@@ -133,6 +215,7 @@ async function loadWindows() {
     option.textContent = `${win.label} (${win.width}×${win.height})`;
     windowsEl.append(option);
   }
+  restoreWindow(loadSettings().windowId);
   setStatus(`${data.windows.length} fenêtres`);
 }
 
@@ -143,6 +226,7 @@ function startNativeStream() {
     return;
   }
 
+  saveSettings();
   stopAll();
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   socket = new WebSocket(
@@ -272,11 +356,7 @@ async function startBrowserCapture() {
   setStatus("Capture navigateur + OCR…");
   browserStream.getVideoTracks()[0].addEventListener("ended", stopAll);
 
-  const protocol = location.protocol === "https:" ? "wss" : "ws";
-  socket = new WebSocket(`${protocol}://${location.host}/ws/analyze?${streamQuery()}`);
-  socket.binaryType = "blob";
-  socket.addEventListener("message", handleSocketMessage);
-  socket.addEventListener("open", startAnalyzeTimer);
+  connectAnalyzeSocket();
 }
 
 refreshBtn.addEventListener("click", () => {
@@ -287,18 +367,29 @@ stopBtn.addEventListener("click", stopAll);
 browserBtn.addEventListener("click", () => {
   startBrowserCapture().catch((error) => setStatus(error.message, true));
 });
-fpsEl.addEventListener("input", syncFpsLabel);
+sourceEl.addEventListener("change", saveSettings);
+targetEl.addEventListener("change", saveSettings);
+windowsEl.addEventListener("change", saveSettings);
+fpsEl.addEventListener("input", () => {
+  syncFpsLabel();
+  saveSettings();
+});
 fpsEl.addEventListener("change", () => {
   syncFpsLabel();
+  saveSettings();
   if (browserStream) {
     startAnalyzeTimer();
     return;
   }
   if (socket && windowsEl.value) startNativeStream();
 });
+minWordsEl.addEventListener("change", () => {
+  applyMinWords();
+  saveSettings();
+});
 windowsEl.addEventListener("dblclick", startNativeStream);
 frameEl.addEventListener("load", drawOverlay);
 window.addEventListener("resize", drawOverlay);
 
-syncFpsLabel();
+applySettings();
 loadWindows().catch((error) => setStatus(error.message, true));

@@ -86,7 +86,8 @@ section {
 
 button,
 select,
-output {
+output,
+input {
   font: inherit;
   color: inherit;
 }
@@ -108,7 +109,8 @@ button:disabled {
   cursor: default;
 }
 
-select {
+select,
+input[type="number"] {
   width: 100%;
   background: #10131a;
   border: 1px solid var(--border);

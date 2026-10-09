@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import asdict, dataclass
 
 from Foundation import NSData
@@ -16,6 +18,8 @@ VISION_LANGS = {
 }
 
 MIN_CONFIDENCE = 0.3
+_WORDS = re.compile(r"\S+")
+_NUMERIC_EXTRA = set(".,:;/-–—+%#|_×xX=()[]~～'’`°*")
 
 
 @dataclass
@@ -74,6 +78,70 @@ def _recognize(handler, source: str) -> list[TextBox]:
 
     boxes.sort(key=lambda item: (round(item.y, 3), item.x))
     return boxes
+
+
+def _is_atomic_char(ch: str) -> bool:
+    code = ord(ch)
+    return (
+        0x3040 <= code <= 0x30FF
+        or 0x3400 <= code <= 0x9FFF
+        or 0xF900 <= code <= 0xFAFF
+        or 0xAC00 <= code <= 0xD7AF
+        or 0xFF66 <= code <= 0xFF9D
+    )
+
+
+def _token_spans(text: str) -> list[tuple[int, int]]:
+    if any(_is_atomic_char(ch) for ch in text):
+        spans: list[tuple[int, int]] = []
+        latin_start: int | None = None
+        for index, char in enumerate(text):
+            if char.isspace():
+                if latin_start is not None:
+                    spans.append((latin_start, index))
+                    latin_start = None
+                continue
+            if _is_atomic_char(char):
+                if latin_start is not None:
+                    spans.append((latin_start, index))
+                    latin_start = None
+                spans.append((index, index + 1))
+            elif latin_start is None:
+                latin_start = index
+        if latin_start is not None:
+            spans.append((latin_start, len(text)))
+        return spans
+    return [(match.start(), match.end()) for match in _WORDS.finditer(text)]
+
+
+def word_count(text: str) -> int:
+    return len(_token_spans(text))
+
+
+def is_numeric_group(text: str) -> bool:
+    """Vrai si le groupe n’est que des chiffres (scores, timers, HP…)."""
+    stripped = text.strip()
+    if not stripped:
+        return False
+    has_digit = False
+    for char in stripped:
+        if char.isspace():
+            continue
+        if unicodedata.category(char) == "Nd":
+            has_digit = True
+            continue
+        if char in _NUMERIC_EXTRA:
+            continue
+        return False
+    return has_digit
+
+
+def filter_min_words(boxes: list[TextBox], min_words: int) -> list[TextBox]:
+    """Écarte les groupes trop courts et ceux qui ne sont que des chiffres."""
+    kept = [box for box in boxes if not is_numeric_group(box.text)]
+    if min_words <= 1:
+        return kept
+    return [box for box in kept if word_count(box.text) >= min_words]
 
 
 def recognize_image(cgimage, source: str = "auto") -> list[TextBox]:

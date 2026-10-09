@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketDisconnected, WebSocketState
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -16,6 +17,9 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 MIN_FPS = 1
 MAX_FPS = 30
 DEFAULT_FPS = 10
+MIN_WORDS_LIMIT = 1
+MAX_WORDS_LIMIT = 99
+DEFAULT_MIN_WORDS = 1
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ocr-live")
@@ -37,6 +41,15 @@ def _fps(ws: WebSocket) -> int:
     except ValueError:
         value = DEFAULT_FPS
     return max(MIN_FPS, min(MAX_FPS, value))
+
+
+def _min_words(ws: WebSocket) -> int:
+    raw = ws.query_params.get("min_words")
+    try:
+        value = int(raw) if raw is not None else DEFAULT_MIN_WORDS
+    except ValueError:
+        value = DEFAULT_MIN_WORDS
+    return max(MIN_WORDS_LIMIT, min(MAX_WORDS_LIMIT, value))
 
 
 @app.get("/")
@@ -63,11 +76,19 @@ async def stream_window(ws: WebSocket) -> None:
 
     source, target = _langs(ws)
     fps = _fps(ws)
+    min_words = _min_words(ws)
     frame_interval = 1 / fps
     wid = int(window_id)
     ocr = LiveOcr()
     ocr_task: asyncio.Task | None = None
-    logger.info("Stream fenêtre %s (%s → %s, %s fps)", wid, source, target, fps)
+    logger.info(
+        "Stream fenêtre %s (%s → %s, %s fps, min %s mot(s))",
+        wid,
+        source,
+        target,
+        fps,
+        min_words,
+    )
     failures = 0
 
     try:
@@ -81,10 +102,17 @@ async def stream_window(ws: WebSocket) -> None:
                     jpeg = frame.jpeg
                     src, dst = source, target
 
+                    required_words = min_words
+
                     async def run_ocr() -> None:
                         try:
                             boxes = await asyncio.to_thread(
-                                ocr.run_image, image, src, dst, jpeg
+                                ocr.run_image,
+                                image,
+                                src,
+                                dst,
+                                jpeg,
+                                required_words,
                             )
                             await _send_ocr(ws, boxes)
                         except Exception:
@@ -104,11 +132,12 @@ async def stream_window(ws: WebSocket) -> None:
                     await ws.close(code=1011, reason="capture impossible")
                     return
             await asyncio.sleep(frame_interval)
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, WebSocketDisconnected):
         logger.info("Client déconnecté")
     except Exception:
         logger.exception("Erreur de stream")
-        await ws.close(code=1011)
+        if ws.client_state == WebSocketState.CONNECTED:
+            await ws.close(code=1011)
     finally:
         if ocr_task and not ocr_task.done():
             ocr_task.cancel()
@@ -118,8 +147,11 @@ async def stream_window(ws: WebSocket) -> None:
 async def analyze_frames(ws: WebSocket) -> None:
     await ws.accept()
     source, target = _langs(ws)
+    min_words = _min_words(ws)
     ocr = LiveOcr()
-    logger.info("Analyse navigateur (%s → %s)", source, target)
+    logger.info(
+        "Analyse navigateur (%s → %s, min %s mot(s))", source, target, min_words
+    )
 
     try:
         while True:
@@ -129,10 +161,13 @@ async def analyze_frames(ws: WebSocket) -> None:
                 continue
             if not ocr.should_run(jpeg):
                 continue
-            boxes = await asyncio.to_thread(ocr.run_jpeg, jpeg, source, target)
+            boxes = await asyncio.to_thread(
+                ocr.run_jpeg, jpeg, source, target, min_words
+            )
             await _send_ocr(ws, boxes)
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, WebSocketDisconnected):
         logger.info("Analyse déconnectée")
     except Exception:
         logger.exception("Erreur d'analyse")
-        await ws.close(code=1011)
+        if ws.client_state == WebSocketState.CONNECTED:
+            await ws.close(code=1011)

@@ -8,7 +8,7 @@ import re
 import urllib.parse
 import urllib.request
 
-from server.ocr import TextBox
+from server.ocr import TextBox, is_numeric_group
 
 logger = logging.getLogger("ocr-live")
 
@@ -21,7 +21,7 @@ GOOGLE_SL = {
 }
 
 _CACHE: dict[tuple[str, str, str], str] = {}
-_SKIP = re.compile(r"^[\d\s./:%+\-_|#]+$")
+_SKIP = re.compile(r"^[\d０-９\s.,:;/\-–—+%#|_×xX=()[\]~～'’`°*]+$")
 _USER_AGENT = "Mozilla/5.0"
 
 
@@ -73,7 +73,7 @@ def translate_text(text: str, source: str, target: str) -> str:
     cached = _CACHE.get(key)
     if cached is not None:
         return cached
-    if _SKIP.match(text) or len(text) < 2:
+    if is_numeric_group(text) or _SKIP.match(text) or len(text) < 2:
         _CACHE[key] = text
         return text
 
