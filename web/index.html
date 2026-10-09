@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ocr-live</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <aside>
+      <h1>ocr-live</h1>
+      <p class="hint">
+        Capture une fenêtre, lit le texte à l’écran et superpose la traduction.
+        Mode Tunic : runes phonétiques → anglais → français.
+      </p>
+
+      <section>
+        <h2>Langues</h2>
+        <label for="source">Source</label>
+        <select id="source">
+          <option value="auto" selected>Auto</option>
+          <option value="ja">Japonais</option>
+          <option value="zh">Chinois</option>
+          <option value="ko">Coréen</option>
+          <option value="en">Anglais</option>
+          <option value="tunic">Tunic (runes)</option>
+        </select>
+        <label for="target">Cible</label>
+        <select id="target">
+          <option value="fr" selected>Français</option>
+          <option value="en">Anglais</option>
+          <option value="ja">Japonais</option>
+        </select>
+      </section>
+
+      <section>
+        <h2>Images par seconde</h2>
+        <label for="fps">FPS</label>
+        <div class="row fps-row">
+          <input id="fps" type="range" min="1" max="30" value="10" />
+          <output id="fps-value" for="fps">10</output>
+        </div>
+      </section>
+
+      <section>
+        <h2>Capture native</h2>
+        <div class="row">
+          <button id="refresh" type="button">Rafraîchir</button>
+          <button id="stop" type="button" disabled>Arrêter</button>
+        </div>
+        <label for="windows">Fenêtre</label>
+        <select id="windows" size="10"></select>
+        <button id="start" type="button">Diffuser et traduire</button>
+      </section>
+
+      <section>
+        <h2>Capture navigateur</h2>
+        <p class="hint">
+          Sélecteur macOS. Utile si la capture native est noire.
+        </p>
+        <button id="browser-capture" type="button">Choisir une fenêtre…</button>
+      </section>
+
+      <p id="status">En attente</p>
+    </aside>
+
+    <main>
+      <div id="stage">
+        <img id="frame" alt="Flux de la fenêtre" hidden />
+        <video id="browser-video" autoplay playsinline hidden></video>
+        <canvas id="overlay"></canvas>
+        <p id="placeholder">Choisis une fenêtre à gauche</p>
+      </div>
+    </main>
+
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>
