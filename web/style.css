@@ -120,12 +120,18 @@ input[type="number"] {
 
 main {
   min-width: 0;
+  min-height: 0;
+  height: 100%;
   padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 #stage {
   position: relative;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -151,38 +157,72 @@ main {
 }
 
 #captions {
-  position: absolute;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 0.75rem;
-  pointer-events: none;
-  z-index: 1;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 7.5rem;
+  max-height: 32%;
+  padding: 0.65rem 0.75rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
 }
 
-#caption-source,
-#caption-target {
+#captions:not([hidden]) {
+  display: flex;
+}
+
+.caption-heading {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin: 0 0 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.caption-heading span:last-child {
+  text-align: right;
+}
+
+#caption-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  overflow: auto;
+  min-height: 0;
+}
+
+.caption-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.caption-source,
+.caption-target {
   margin: 0;
-  max-width: 48%;
-  padding: 0.55rem 0.75rem;
+  padding: 0.45rem 0.6rem;
   border-radius: 8px;
-  background: rgba(12, 14, 20, 0.88);
-  font-size: 0.95rem;
+  background: #10131a;
+  font-size: 0.9rem;
   font-weight: 600;
   line-height: 1.35;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-#caption-source {
+.caption-source {
   color: #c5cbe0;
   text-align: left;
 }
 
-#caption-target {
+.caption-target {
   color: #f4f6fb;
   text-align: right;
-  margin-left: auto;
 }
 
 label {

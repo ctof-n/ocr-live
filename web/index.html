@@ -72,12 +72,15 @@
         <img id="frame" alt="Flux de la fenêtre" hidden />
         <video id="browser-video" autoplay playsinline hidden></video>
         <canvas id="overlay"></canvas>
-        <div id="captions" hidden>
-          <p id="caption-source"></p>
-          <p id="caption-target"></p>
-        </div>
         <p id="placeholder">Choisis une fenêtre à gauche</p>
       </div>
+      <section id="captions" hidden>
+        <header class="caption-heading">
+          <span>Original</span>
+          <span>Traduction</span>
+        </header>
+        <div id="caption-list"></div>
+      </section>
     </main>
 
     <script type="module" src="/static/app.js"></script>
