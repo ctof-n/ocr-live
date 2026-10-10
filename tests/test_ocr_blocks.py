@@ -31,6 +31,24 @@ def test_paragraph_from_vision_sample():
     ]
 
 
+def test_lands_of_lore_dialogue_stays_one_block():
+    merged = filter_min_words(
+        merge_text_blocks(
+            [
+                box(0.924, 0.486, 0.054, 0.036, "154"),
+                box(0.270, 0.608, 0.135, 0.054, "Timothy!"),
+                box(0.428, 0.613, 0.513, 0.050, "The Dark Army passed through"),
+                box(0.270, 0.658, 0.662, 0.054, "here not an hour ago. They have stolen"),
+                box(0.270, 0.703, 0.307, 0.054, "the Ruby of Truth."),
+            ]
+        ),
+        3,
+    )
+    assert texts(merged) == [
+        "Timothy! The Dark Army passed through here not an hour ago. They have stolen the Ruby of Truth."
+    ]
+
+
 def test_short_last_line_stays_in_paragraph():
     merged = merge_text_blocks(
         [
@@ -124,6 +142,7 @@ def test_filter_still_drops_short_and_numeric():
 
 if __name__ == "__main__":
     test_paragraph_from_vision_sample()
+    test_lands_of_lore_dialogue_stays_one_block()
     test_short_last_line_stays_in_paragraph()
     test_distant_hud_does_not_merge()
     test_side_by_side_columns_do_not_merge()

@@ -27,6 +27,7 @@ _NEW_UTTERANCE = re.compile(r"^[「『“\"]")
 _MAX_BLOCK_LINES = 8
 _LINE_GAP = 0.8
 _CONTINUE_GAP = 1.4
+_LINE_OVERLAP = 0.4
 _COLUMN_SLACK = 0.045
 
 
@@ -235,6 +236,13 @@ def _similar_height(a: TextBox, b: TextBox) -> bool:
     return thin > 0 and max(a.h, b.h) <= thin * 1.6
 
 
+def _similar_line_size(prev: TextBox, nxt: TextBox) -> bool:
+    """Accepte une ligne sous un paragraphe déjà fusionné (boîte plus haute)."""
+    if _similar_height(prev, nxt):
+        return True
+    return nxt.h > 0 and prev.h > nxt.h * 1.6 and prev.h <= nxt.h * _MAX_BLOCK_LINES * 1.25
+
+
 def _same_column(a: TextBox, b: TextBox) -> bool:
     if abs(a.x - b.x) <= _COLUMN_SLACK:
         return True
@@ -287,11 +295,11 @@ def _same_block(prev: TextBox, box: TextBox, origin: TextBox) -> bool:
         return False
     thin = min(prev.h, box.h)
     gap = _vertical_gap(prev, box)
-    if gap < -thin * 0.12:
+    if gap < -thin * _LINE_OVERLAP:
         return False
     if gap > thin * _LINE_GAP:
         return False
-    if box.y + box.h * 0.35 < prev.y + prev.h * 0.45:
+    if box.y < prev.y + prev.h * 0.35:
         return False
     if not _same_column(prev, box) or not _same_column(origin, box):
         return False
@@ -308,11 +316,11 @@ def _can_continue_below(prev: TextBox, nxt: TextBox) -> bool:
         return False
     if _NEW_UTTERANCE.match(nxt.text.strip()):
         return False
-    if not _similar_height(prev, nxt):
+    if not _similar_line_size(prev, nxt):
         return False
     thin = min(prev.h, nxt.h)
     gap = _vertical_gap(prev, nxt)
-    if thin <= 0 or gap < -thin * 0.12:
+    if thin <= 0 or gap < -thin * _LINE_OVERLAP:
         return False
     if gap > thin * _CONTINUE_GAP:
         return False
