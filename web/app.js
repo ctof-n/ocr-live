@@ -24,6 +24,7 @@ const cropTopValueEl = document.querySelector("#crop-top-value");
 const cropBottomValueEl = document.querySelector("#crop-bottom-value");
 const cropLeftValueEl = document.querySelector("#crop-left-value");
 const cropRightValueEl = document.querySelector("#crop-right-value");
+const showBubblesEl = document.querySelector("#show-bubbles");
 
 const SETTINGS_KEY = "ocr-live.settings";
 
@@ -54,6 +55,7 @@ function saveSettings() {
     cropBottom: selectedCropPct(cropBottomEl),
     cropLeft: selectedCropPct(cropLeftEl),
     cropRight: selectedCropPct(cropRightEl),
+    showBubbles: showBubblesEl.checked,
     windowId: windowsEl.value,
   };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -75,6 +77,9 @@ function applySettings() {
   applyCropValue(cropBottomEl, settings.cropBottom, 0);
   applyCropValue(cropLeftEl, settings.cropLeft, 0);
   applyCropValue(cropRightEl, settings.cropRight, 0);
+  if (typeof settings.showBubbles === "boolean") {
+    showBubblesEl.checked = settings.showBubbles;
+  }
   syncFpsLabel();
   syncCropLabels();
 }
@@ -401,7 +406,7 @@ function drawOverlay() {
   const media = mediaRect();
   if (!media) return;
   drawCropMask(ctx, media);
-  if (!boxes.length) return;
+  if (!showBubblesEl.checked || !boxes.length) return;
 
   for (const box of boxes) {
     const x = media.x + box.x * media.w;
@@ -481,6 +486,10 @@ browserBtn.addEventListener("click", () => {
 });
 sourceEl.addEventListener("change", saveSettings);
 targetEl.addEventListener("change", saveSettings);
+showBubblesEl.addEventListener("change", () => {
+  saveSettings();
+  drawOverlay();
+});
 windowsEl.addEventListener("change", saveSettings);
 fpsEl.addEventListener("input", () => {
   syncFpsLabel();
