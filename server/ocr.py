@@ -24,6 +24,44 @@ _WORDS = re.compile(r"\S+")
 _NUMERIC_EXTRA = set(".,:;/-–—+%#|_×xX=()[]~～'’`°*")
 _SENTENCE_END = re.compile(r"([.!?。！？…][\"'」』)）]*|[」』])\s*$")
 _NEW_UTTERANCE = re.compile(r"^[「『“\"]")
+_BULLET_LINE = re.compile(
+    r"^(?:"
+    r"[•●○◦‣■□▪▫◆◇►▶➢❖✔✗·∙・※]"
+    r"|[-–—*+](?:\s+\S|\s*$|(?=[A-ZÀ-Ÿ]))"
+    r"|\d{1,2}[.)](?:\s+|$|(?=[A-ZÀ-Ÿ]))"
+    r"|[a-z][)]\s+"
+    r"|[ivx]{1,4}[.)]\s+"
+    r"|\(\d{1,2}\)\s+"
+    r")"
+)
+_RATING_LINE = re.compile(r"^[\(\[]?\s*\d+[.,]\d+\s*/\s*\d+\s*[\)\]]?$")
+_REVIEW_LINE = re.compile(
+    r"^[\(\[]?\s*\d+\s+(avis|reviews?|notes?|ratings?)\s*[\)\]]?$",
+    re.IGNORECASE,
+)
+_LABEL_TOKEN = re.compile(r"[A-Za-zÀ-ÿ0-9./]+")
+_LABEL_STOP = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "of",
+        "and",
+        "or",
+        "to",
+        "for",
+        "le",
+        "la",
+        "les",
+        "de",
+        "du",
+        "des",
+        "un",
+        "une",
+        "et",
+        "en",
+    }
+)
 _MAX_BLOCK_LINES = 8
 _LINE_GAP = 0.8
 _CONTINUE_GAP = 1.4
@@ -321,10 +359,24 @@ def _on_same_line(line: list[TextBox], box: TextBox) -> bool:
     return 0 <= gap <= min(max(thin * 2.2, 0.02), _SAME_LINE_GAP)
 
 
+def _can_join_same_line(line: list[TextBox], box: TextBox) -> bool:
+    existing = _join_block_text([item.text for item in line])
+    if _is_ui_label(existing) and _is_ui_label(box.text):
+        return False
+    return True
+
+
 def _group_lines(boxes: list[TextBox]) -> list[list[TextBox]]:
     lines: list[list[TextBox]] = []
     for box in boxes:
-        match = next((line for line in lines if _on_same_line(line, box)), None)
+        match = next(
+            (
+                line
+                for line in lines
+                if _on_same_line(line, box) and _can_join_same_line(line, box)
+            ),
+            None,
+        )
         if match is not None:
             match.append(box)
         else:
@@ -333,8 +385,38 @@ def _group_lines(boxes: list[TextBox]) -> list[list[TextBox]]:
     return lines
 
 
+def _is_bullet_line(text: str) -> bool:
+    stripped = text.strip()
+    return bool(stripped) and bool(_BULLET_LINE.match(stripped))
+
+
+def _is_chip_token(token: str) -> bool:
+    if _RATING_LINE.match(token) or token.isdigit():
+        return True
+    if token.lower() in _LABEL_STOP or len(token) > 18:
+        return False
+    return token[:1].isupper()
+
+
+def _is_ui_label(text: str) -> bool:
+    """Pastilles, notes, langues : libellés courts, pas un paragraphe."""
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if _RATING_LINE.match(stripped) or _REVIEW_LINE.match(stripped):
+        return True
+    if stripped.endswith(("!", "?")):
+        return False
+    tokens = _LABEL_TOKEN.findall(stripped)
+    return bool(tokens) and len(tokens) <= 4 and all(_is_chip_token(token) for token in tokens)
+
+
 def _same_block(prev: TextBox, box: TextBox, origin: TextBox) -> bool:
     """Lignes d’un même paragraphe : interligne serré, même colonne, taille proche."""
+    if _is_bullet_line(box.text):
+        return False
+    if _is_ui_label(prev.text) or _is_ui_label(box.text):
+        return False
     if _is_vertical_label(prev) or _is_vertical_label(box):
         return False
     if not _similar_height(prev, box) or not _similar_width(prev, box):
@@ -360,7 +442,9 @@ def _can_continue_below(prev: TextBox, nxt: TextBox) -> bool:
     """Poursuit un paragraphe sans clôture avec la ligne située juste en dessous."""
     if _ends_sentence(prev.text) or word_count(prev.text) < 3:
         return False
-    if _NEW_UTTERANCE.match(nxt.text.strip()):
+    if _NEW_UTTERANCE.match(nxt.text.strip()) or _is_bullet_line(nxt.text):
+        return False
+    if _is_ui_label(prev.text) or _is_ui_label(nxt.text):
         return False
     if _is_vertical_label(prev) or _is_vertical_label(nxt):
         return False

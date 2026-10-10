@@ -1,4 +1,11 @@
-from server.ocr import TextBox, filter_min_words, merge_text_blocks, word_count
+from server.ocr import (
+    TextBox,
+    _is_bullet_line,
+    _is_ui_label,
+    filter_min_words,
+    merge_text_blocks,
+    word_count,
+)
 
 
 def box(x, y, w, h, text) -> TextBox:
@@ -192,6 +199,105 @@ def test_closed_sentence_does_not_merge_next_paragraph():
     assert len(merged) == 2
 
 
+def test_bullet_list_items_stay_separate():
+    merged = merge_text_blocks(
+        [
+            box(0.10, 0.30, 0.40, 0.035, "- Take the rusty key"),
+            box(0.10, 0.35, 0.42, 0.035, "- Open the wooden door"),
+            box(0.10, 0.40, 0.38, 0.035, "• Find the hidden exit"),
+            box(0.10, 0.45, 0.40, 0.035, "1. Talk to the merchant"),
+            box(0.10, 0.50, 0.36, 0.035, "2. Buy a sharper sword"),
+        ]
+    )
+    assert texts(merged) == [
+        "- Take the rusty key",
+        "- Open the wooden door",
+        "• Find the hidden exit",
+        "1. Talk to the merchant",
+        "2. Buy a sharper sword",
+    ]
+
+
+def test_bullet_item_can_wrap_but_not_eat_next_item():
+    merged = merge_text_blocks(
+        [
+            box(0.10, 0.30, 0.48, 0.035, "- Search the ancient ruins for the"),
+            box(0.14, 0.35, 0.28, 0.035, "missing crystal shard"),
+            box(0.10, 0.41, 0.44, 0.035, "- Return to the village elder"),
+        ]
+    )
+    assert texts(merged) == [
+        "- Search the ancient ruins for the missing crystal shard",
+        "- Return to the village elder",
+    ]
+
+
+def test_bullet_marker_box_joins_same_line_item():
+    merged = merge_text_blocks(
+        [
+            box(0.10, 0.30, 0.02, 0.03, "•"),
+            box(0.14, 0.30, 0.36, 0.03, "Take the rusty key now"),
+            box(0.10, 0.36, 0.02, 0.03, "•"),
+            box(0.14, 0.36, 0.34, 0.03, "Open the wooden door"),
+        ]
+    )
+    assert texts(merged) == [
+        "• Take the rusty key now",
+        "• Open the wooden door",
+    ]
+
+
+def test_is_bullet_line_markers():
+    assert _is_bullet_line("- Take the key")
+    assert _is_bullet_line("• Find the exit")
+    assert _is_bullet_line("1. Talk to the merchant")
+    assert _is_bullet_line("a) Choose the left path")
+    assert _is_bullet_line("・選択肢を選ぶ")
+    assert not _is_bullet_line("The hero walks slowly")
+    assert not _is_bullet_line("I am eager to discover more")
+    assert not _is_bullet_line("Once upon a time the knight")
+
+
+def test_gog_product_header_does_not_merge():
+    merged = merge_text_blocks(
+        [
+            box(0.32, 0.12, 0.46, 0.048, "Lighthouse: The Dark Being"),
+            box(0.32, 0.19, 0.06, 0.030, "FPP"),
+            box(0.40, 0.19, 0.12, 0.030, "Aventure"),
+            box(0.54, 0.19, 0.12, 0.030, "Réflexion"),
+            box(0.32, 0.24, 0.16, 0.030, "Bibliothèque"),
+            box(0.32, 0.29, 0.08, 0.030, "4.1/5"),
+            box(0.42, 0.29, 0.14, 0.030, "( 41 Avis )"),
+            box(0.32, 0.34, 0.10, 0.030, "English"),
+        ]
+    )
+    assert texts(merged) == [
+        "Lighthouse: The Dark Being",
+        "FPP",
+        "Aventure",
+        "Réflexion",
+        "Bibliothèque",
+        "4.1/5",
+        "( 41 Avis )",
+        "English",
+    ]
+
+
+def test_is_ui_label_chips_and_ratings():
+    assert _is_ui_label("FPP")
+    assert _is_ui_label("Aventure")
+    assert _is_ui_label("Réflexion")
+    assert _is_ui_label("Bibliothèque")
+    assert _is_ui_label("English")
+    assert _is_ui_label("4.1/5")
+    assert _is_ui_label("( 41 Avis )")
+    assert _is_ui_label("FPP Aventure Réflexion")
+    assert not _is_ui_label("Lighthouse: The Dark Being")
+    assert not _is_ui_label("The hero walks slowly")
+    assert not _is_ui_label("Timothy!")
+    assert not _is_ui_label("how are you doing today")
+
+
 def test_quoted_utterances_stay_separate():
     merged = merge_text_blocks(
         [
@@ -238,6 +344,12 @@ if __name__ == "__main__":
     test_side_by_side_columns_do_not_merge()
     test_unfinished_sentence_merges_line_below()
     test_closed_sentence_does_not_merge_next_paragraph()
+    test_gog_product_header_does_not_merge()
+    test_is_ui_label_chips_and_ratings()
+    test_bullet_list_items_stay_separate()
+    test_bullet_item_can_wrap_but_not_eat_next_item()
+    test_bullet_marker_box_joins_same_line_item()
+    test_is_bullet_line_markers()
     test_quoted_utterances_stay_separate()
     test_same_line_fragments_group()
     test_filter_still_drops_short_and_numeric()
