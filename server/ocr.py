@@ -254,10 +254,19 @@ def _similar_line_size(prev: TextBox, nxt: TextBox) -> bool:
     return nxt.h > 0 and prev.h > nxt.h * 1.6 and prev.h <= nxt.h * _MAX_BLOCK_LINES * 1.25
 
 
+def _similar_width(a: TextBox, b: TextBox) -> bool:
+    thin = min(a.w, b.w)
+    return thin > 0 and max(a.w, b.w) <= thin * 3.5
+
+
+def _is_vertical_label(box: TextBox) -> bool:
+    return box.w > 0 and box.h >= box.w * 1.15
+
+
 def _same_column(a: TextBox, b: TextBox) -> bool:
     if abs(a.x - b.x) <= _COLUMN_SLACK:
         return True
-    if abs((a.x + a.w) - (b.x + b.w)) <= 0.08:
+    if _similar_width(a, b) and abs((a.x + a.w) - (b.x + b.w)) <= 0.08:
         return True
     return abs(a.x - b.x) <= 0.08 and (
         min(a.x + a.w, b.x + b.w) - max(a.x, b.x) > 0
@@ -304,7 +313,9 @@ def _group_lines(boxes: list[TextBox]) -> list[list[TextBox]]:
 
 def _same_block(prev: TextBox, box: TextBox, origin: TextBox) -> bool:
     """Lignes d’un même paragraphe : interligne serré, même colonne, taille proche."""
-    if not _similar_height(prev, box):
+    if _is_vertical_label(prev) or _is_vertical_label(box):
+        return False
+    if not _similar_height(prev, box) or not _similar_width(prev, box):
         return False
     thin = min(prev.h, box.h)
     gap = _vertical_gap(prev, box)
@@ -329,7 +340,9 @@ def _can_continue_below(prev: TextBox, nxt: TextBox) -> bool:
         return False
     if _NEW_UTTERANCE.match(nxt.text.strip()):
         return False
-    if not _similar_line_size(prev, nxt):
+    if _is_vertical_label(prev) or _is_vertical_label(nxt):
+        return False
+    if not _similar_line_size(prev, nxt) or not _similar_width(prev, nxt):
         return False
     thin = min(prev.h, nxt.h)
     gap = _vertical_gap(prev, nxt)

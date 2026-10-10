@@ -69,6 +69,22 @@ def test_distant_hud_does_not_merge():
     assert len(merged) == 2
 
 
+def test_vertical_spine_label_does_not_join_paragraph():
+    merged = filter_min_words(
+        merge_text_blocks(
+            [
+                box(0.182, 0.756, 0.262, 0.043, "I am eager to discover more"),
+                box(0.380, 0.838, 0.017, 0.057, "OF MYST"),
+                box(0.179, 0.719, 0.283, 0.047, "time ago for they appear aged."),
+            ]
+        ),
+        3,
+    )
+    blob = " ".join(texts(merged))
+    assert "more OF MYST" not in blob
+    assert any("I am eager to discover more" == item.text for item in merged)
+
+
 def test_book_first_lines_are_not_joined():
     merged = merge_text_blocks(
         [
@@ -215,6 +231,7 @@ if __name__ == "__main__":
     test_lands_of_lore_dialogue_stays_one_block()
     test_short_last_line_stays_in_paragraph()
     test_distant_hud_does_not_merge()
+    test_vertical_spine_label_does_not_join_paragraph()
     test_book_first_lines_are_not_joined()
     test_book_pages_read_left_then_right()
     test_book_wraps_around_center_illustration()
