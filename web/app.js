@@ -35,6 +35,10 @@ let boxes = [];
 let analyzeTimer = 0;
 let analyzeBusy = false;
 const grabCanvas = document.createElement("canvas");
+const sampleCanvas = document.createElement("canvas");
+const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
+const DEFAULT_BUBBLE_BG = "rgba(12, 14, 20, 0.86)";
+const DEFAULT_BUBBLE_FG = "#f4f6fb";
 
 function loadSettings() {
   try {
@@ -400,6 +404,149 @@ function fitBubbleText(ctx, text, maxWidth, maxHeight) {
   return { font: bestFont, lines: bestLines };
 }
 
+function sourceMediaElement() {
+  return frameEl.hidden ? videoEl : frameEl;
+}
+
+function mediaPixelSize(media) {
+  if (media === videoEl) return { w: media.videoWidth, h: media.videoHeight };
+  return { w: media.naturalWidth, h: media.naturalHeight };
+}
+
+function rgbCss(color) {
+  return `rgb(${color.r}, ${color.g}, ${color.b})`;
+}
+
+function luma(r, g, b) {
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function colorDist2(a, b) {
+  const dr = a.r - b.r;
+  const dg = a.g - b.g;
+  const db = a.b - b.b;
+  return dr * dr + dg * dg + db * db;
+}
+
+function meanColor(pixels) {
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  for (const pixel of pixels) {
+    r += pixel.r;
+    g += pixel.g;
+    b += pixel.b;
+  }
+  const n = pixels.length || 1;
+  return { r: Math.round(r / n), g: Math.round(g / n), b: Math.round(b / n) };
+}
+
+function contrastInk(bg) {
+  return luma(bg.r, bg.g, bg.b) > 140
+    ? { r: 28, g: 22, b: 16 }
+    : { r: 244, g: 246, b: 251 };
+}
+
+function splitPalette(data, width, height) {
+  const pixels = [];
+  const border = [];
+  const margin = Math.max(1, Math.round(Math.min(width, height) * 0.18));
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4;
+      const pixel = { r: data[i], g: data[i + 1], b: data[i + 2] };
+      pixels.push(pixel);
+      if (x < margin || y < margin || x >= width - margin || y >= height - margin) {
+        border.push(pixel);
+      }
+    }
+  }
+  if (!pixels.length) return null;
+
+  let dark = pixels[0];
+  let light = pixels[0];
+  let darkL = 256;
+  let lightL = -1;
+  for (const pixel of pixels) {
+    const value = luma(pixel.r, pixel.g, pixel.b);
+    if (value < darkL) {
+      darkL = value;
+      dark = pixel;
+    }
+    if (value > lightL) {
+      lightL = value;
+      light = pixel;
+    }
+  }
+
+  let c0 = { r: dark.r, g: dark.g, b: dark.b };
+  let c1 = { r: light.r, g: light.g, b: light.b };
+  let group0 = [];
+  let group1 = [];
+  for (let iter = 0; iter < 6; iter += 1) {
+    group0 = [];
+    group1 = [];
+    for (const pixel of pixels) {
+      (colorDist2(pixel, c0) <= colorDist2(pixel, c1) ? group0 : group1).push(pixel);
+    }
+    if (!group0.length || !group1.length) break;
+    c0 = meanColor(group0);
+    c1 = meanColor(group1);
+  }
+
+  if (!group0.length || !group1.length) {
+    const bg = meanColor(border.length ? border : pixels);
+    return { bg, fg: contrastInk(bg) };
+  }
+
+  let border0 = 0;
+  for (const pixel of border) {
+    if (colorDist2(pixel, c0) <= colorDist2(pixel, c1)) border0 += 1;
+  }
+  const c0IsBg = border.length ? border0 >= border.length / 2 : group0.length >= group1.length;
+  const bg = c0IsBg ? c0 : c1;
+  let fg = c0IsBg ? c1 : c0;
+  if (Math.abs(luma(fg.r, fg.g, fg.b) - luma(bg.r, bg.g, bg.b)) < 36) {
+    fg = contrastInk(bg);
+  }
+  return { bg, fg };
+}
+
+function sampleBoxColors(box) {
+  const media = sourceMediaElement();
+  if (!media || media.hidden) return null;
+  const size = mediaPixelSize(media);
+  if (!size.w || !size.h) return null;
+
+  const padX = box.w * 0.08;
+  const padY = box.h * 0.14;
+  const x0 = Math.max(0, Math.floor((box.x - padX) * size.w));
+  const y0 = Math.max(0, Math.floor((box.y - padY) * size.h));
+  const x1 = Math.min(size.w, Math.ceil((box.x + box.w + padX) * size.w));
+  const y1 = Math.min(size.h, Math.ceil((box.y + box.h + padY) * size.h));
+  const sw = Math.max(1, x1 - x0);
+  const sh = Math.max(1, y1 - y0);
+  const scale = Math.min(1, 40 / Math.max(sw, sh));
+  const dw = Math.max(6, Math.round(sw * scale));
+  const dh = Math.max(6, Math.round(sh * scale));
+  sampleCanvas.width = dw;
+  sampleCanvas.height = dh;
+  try {
+    sampleCtx.drawImage(media, x0, y0, sw, sh, 0, 0, dw, dh);
+    const { data } = sampleCtx.getImageData(0, 0, dw, dh);
+    return splitPalette(data, dw, dh);
+  } catch {
+    return null;
+  }
+}
+
+function paletteFor(box) {
+  if (box._palette) return box._palette;
+  const palette = sampleBoxColors(box);
+  if (palette) box._palette = palette;
+  return palette;
+}
+
 function mediaRect() {
   const media = frameEl.hidden ? videoEl : frameEl;
   if (!media || media.hidden) return null;
@@ -463,12 +610,13 @@ function drawOverlay() {
     const { font, lines } = fitBubbleText(ctx, box.translated || box.text, innerW, innerH);
     const textH = lines.length * font * 1.2;
     const textY = y + pad + Math.max(0, (innerH - textH) / 2);
+    const palette = paletteFor(box);
 
-    ctx.fillStyle = "rgba(12, 14, 20, 0.86)";
+    ctx.fillStyle = palette ? rgbCss(palette.bg) : DEFAULT_BUBBLE_BG;
     ctx.beginPath();
     ctx.roundRect(x - 1, y - 1, w + 2, h + 2, 4);
     ctx.fill();
-    ctx.fillStyle = "#f4f6fb";
+    ctx.fillStyle = palette ? rgbCss(palette.fg) : DEFAULT_BUBBLE_FG;
     ctx.font = `600 ${font}px ui-sans-serif, system-ui, sans-serif`;
     lines.forEach((line, index) => {
       ctx.fillText(line, x + pad, textY + font + index * font * 1.2);
