@@ -17,9 +17,9 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 MIN_FPS = 1
 MAX_FPS = 30
 DEFAULT_FPS = 10
-MIN_WORDS_LIMIT = 1
+MIN_WORDS_LIMIT = 3
 MAX_WORDS_LIMIT = 99
-DEFAULT_MIN_WORDS = 1
+DEFAULT_MIN_WORDS = 3
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ocr-live")

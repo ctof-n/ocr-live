@@ -150,6 +150,41 @@ main {
   pointer-events: none;
 }
 
+#captions {
+  position: absolute;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 0.75rem;
+  pointer-events: none;
+  z-index: 1;
+}
+
+#caption-source,
+#caption-target {
+  margin: 0;
+  max-width: 48%;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(12, 14, 20, 0.88);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#caption-source {
+  color: #c5cbe0;
+  text-align: left;
+}
+
+#caption-target {
+  color: #f4f6fb;
+  text-align: right;
+  margin-left: auto;
+}
+
 label {
   font-size: 0.8rem;
   color: var(--muted);

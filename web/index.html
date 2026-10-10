@@ -32,8 +32,8 @@
           <option value="ja">Japonais</option>
         </select>
         <label for="min-words">Minimum de mots par groupe OCR</label>
-        <input id="min-words" type="number" min="1" max="99" value="1" />
-        <p class="hint">1 = tout traduire. 4 ne traduit que les groupes d’au moins 4 mots.</p>
+        <input id="min-words" type="number" min="3" max="99" value="3" />
+        <p class="hint">Les groupes d’1 ou 2 mots ne sont pas traduits. 3 = dialogue court, 4+ plus sélectif.</p>
       </section>
 
       <section>
@@ -72,6 +72,10 @@
         <img id="frame" alt="Flux de la fenêtre" hidden />
         <video id="browser-video" autoplay playsinline hidden></video>
         <canvas id="overlay"></canvas>
+        <div id="captions" hidden>
+          <p id="caption-source"></p>
+          <p id="caption-target"></p>
+        </div>
         <p id="placeholder">Choisis une fenêtre à gauche</p>
       </div>
     </main>

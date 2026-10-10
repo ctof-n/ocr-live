@@ -7,6 +7,9 @@ const statusEl = document.querySelector("#status");
 const frameEl = document.querySelector("#frame");
 const videoEl = document.querySelector("#browser-video");
 const overlayEl = document.querySelector("#overlay");
+const captionsEl = document.querySelector("#captions");
+const captionSourceEl = document.querySelector("#caption-source");
+const captionTargetEl = document.querySelector("#caption-target");
 const placeholderEl = document.querySelector("#placeholder");
 const stageEl = document.querySelector("#stage");
 const sourceEl = document.querySelector("#source");
@@ -55,7 +58,7 @@ function applySettings() {
     fpsEl.value = String(Math.min(30, Math.max(1, Math.round(settings.fps))));
   }
   if (Number.isFinite(settings.minWords)) {
-    minWordsEl.value = String(Math.min(99, Math.max(1, Math.round(settings.minWords))));
+    minWordsEl.value = String(Math.min(99, Math.max(3, Math.round(settings.minWords))));
   }
   syncFpsLabel();
 }
@@ -79,8 +82,8 @@ function selectedFps() {
 
 function selectedMinWords() {
   const value = Number(minWordsEl.value);
-  if (!Number.isFinite(value)) return 1;
-  return Math.min(99, Math.max(1, Math.round(value)));
+  if (!Number.isFinite(value)) return 3;
+  return Math.min(99, Math.max(3, Math.round(value)));
 }
 
 function streamQuery() {
@@ -157,6 +160,9 @@ function clearOverlay() {
   boxes = [];
   const ctx = overlayEl.getContext("2d");
   ctx.clearRect(0, 0, overlayEl.width, overlayEl.height);
+  captionsEl.hidden = true;
+  captionSourceEl.textContent = "";
+  captionTargetEl.textContent = "";
 }
 
 function stopNativeStream() {
@@ -246,22 +252,6 @@ function startNativeStream() {
   });
 }
 
-function wrapText(ctx, text, maxWidth) {
-  const words = text.split(/\s+/);
-  const lines = [];
-  let line = "";
-  for (const word of words) {
-    const trial = line ? `${line} ${word}` : word;
-    if (ctx.measureText(trial).width <= maxWidth || !line) line = trial;
-    else {
-      lines.push(line);
-      line = word;
-    }
-  }
-  if (line) lines.push(line);
-  return lines;
-}
-
 function mediaRect() {
   const media = frameEl.hidden ? videoEl : frameEl;
   if (!media || media.hidden) return null;
@@ -283,39 +273,21 @@ function drawOverlay() {
   overlayEl.height = Math.max(1, Math.round(height * dpr));
   overlayEl.style.width = `${width}px`;
   overlayEl.style.height = `${height}px`;
-
-  const ctx = overlayEl.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, width, height);
+  overlayEl.getContext("2d").clearRect(0, 0, overlayEl.width, overlayEl.height);
 
   const media = mediaRect();
-  if (!media || !boxes.length) return;
-
-  for (const box of boxes) {
-    const x = media.x + box.x * media.w;
-    const y = media.y + box.y * media.h;
-    const w = Math.max(48, box.w * media.w);
-    const h = Math.max(18, box.h * media.h);
-    const label = box.translated || box.text;
-    let font = Math.min(22, Math.max(11, h * 0.72));
-    ctx.font = `600 ${font}px ui-sans-serif, system-ui, sans-serif`;
-    let lines = wrapText(ctx, label, w - 10);
-    while (font > 10 && lines.length * font * 1.15 > h + 8) {
-      font -= 1;
-      ctx.font = `600 ${font}px ui-sans-serif, system-ui, sans-serif`;
-      lines = wrapText(ctx, label, w - 10);
-    }
-    const boxH = Math.max(h, lines.length * font * 1.2 + 8);
-
-    ctx.fillStyle = "rgba(12, 14, 20, 0.86)";
-    ctx.beginPath();
-    ctx.roundRect(x - 2, y - 2, w + 4, boxH + 4, 4);
-    ctx.fill();
-    ctx.fillStyle = "#f4f6fb";
-    lines.forEach((line, index) => {
-      ctx.fillText(line, x + 5, y + font + index * font * 1.2);
-    });
+  if (!media || !boxes.length) {
+    captionsEl.hidden = true;
+    return;
   }
+
+  const lowest = [...boxes].sort((a, b) => a.y + a.h - (b.y + b.h)).at(-1);
+  captionSourceEl.textContent = lowest.text;
+  captionTargetEl.textContent = lowest.translated || lowest.text;
+  captionsEl.hidden = false;
+  captionsEl.style.left = `${media.x + 8}px`;
+  captionsEl.style.width = `${Math.max(0, media.w - 16)}px`;
+  captionsEl.style.bottom = `${Math.max(8, height - media.y - media.h + 8)}px`;
 }
 
 async function sendVideoFrame() {

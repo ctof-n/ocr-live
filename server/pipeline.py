@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import time
 
-from server.ocr import TextBox, filter_min_words, recognize_image, recognize_jpeg
+from server.ocr import TextBox, filter_min_words, merge_text_blocks, recognize_image, recognize_jpeg
 from server.translate import translate_boxes
 from server.trunic.recognize import recognize_jpeg as recognize_trunic
 
@@ -49,11 +49,14 @@ class LiveOcr:
         source: str,
         target: str,
         jpeg: bytes | None = None,
-        min_words: int = 1,
+        min_words: int = 3,
     ) -> list[dict]:
         self.busy = True
         try:
-            boxes = filter_min_words(self._recognize(source, jpeg, cgimage), min_words)
+            boxes = filter_min_words(
+                merge_text_blocks(self._recognize(source, jpeg, cgimage)),
+                min_words,
+            )
             lang = "en" if source == "tunic" else source
             self.boxes = translate_boxes(boxes, lang, target)
             return [box.as_dict() for box in self.boxes]
@@ -61,6 +64,6 @@ class LiveOcr:
             self.busy = False
 
     def run_jpeg(
-        self, jpeg: bytes, source: str, target: str, min_words: int = 1
+        self, jpeg: bytes, source: str, target: str, min_words: int = 3
     ) -> list[dict]:
         return self.run_image(None, source, target, jpeg=jpeg, min_words=min_words)
