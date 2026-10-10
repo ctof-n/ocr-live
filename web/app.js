@@ -339,13 +339,30 @@ function drawCropMask(ctx, media) {
   ctx.restore();
 }
 
+function splitToken(ctx, token, maxWidth) {
+  if (ctx.measureText(token).width <= maxWidth) return [token];
+  const parts = [];
+  let chunk = "";
+  for (const char of token) {
+    const trial = chunk + char;
+    if (chunk && ctx.measureText(trial).width > maxWidth) {
+      parts.push(chunk);
+      chunk = char;
+    } else {
+      chunk = trial;
+    }
+  }
+  if (chunk) parts.push(chunk);
+  return parts;
+}
+
 function wrapText(ctx, text, maxWidth) {
-  const words = text.split(/\s+/);
+  const words = text.split(/\s+/).flatMap((word) => splitToken(ctx, word, maxWidth));
   const lines = [];
   let line = "";
   for (const word of words) {
     const trial = line ? `${line} ${word}` : word;
-    if (ctx.measureText(trial).width <= maxWidth || !line) line = trial;
+    if (!line || ctx.measureText(trial).width <= maxWidth) line = trial;
     else {
       lines.push(line);
       line = word;
@@ -353,6 +370,34 @@ function wrapText(ctx, text, maxWidth) {
   }
   if (line) lines.push(line);
   return lines;
+}
+
+function fitBubbleText(ctx, text, maxWidth, maxHeight) {
+  const family = "ui-sans-serif, system-ui, sans-serif";
+  const minFont = 6;
+  const maxFont = Math.max(minFont, Math.floor(Math.min(42, maxHeight)));
+  let bestFont = minFont;
+  ctx.font = `600 ${minFont}px ${family}`;
+  let bestLines = wrapText(ctx, text, maxWidth);
+  let low = minFont;
+  let high = maxFont;
+  while (low <= high) {
+    const font = Math.floor((low + high) / 2);
+    ctx.font = `600 ${font}px ${family}`;
+    const lines = wrapText(ctx, text, maxWidth);
+    const fits =
+      lines.length * font * 1.2 <= maxHeight &&
+      lines.every((line) => ctx.measureText(line).width <= maxWidth);
+    if (fits) {
+      bestFont = font;
+      bestLines = lines;
+      low = font + 1;
+    } else {
+      high = font - 1;
+    }
+  }
+  ctx.font = `600 ${bestFont}px ${family}`;
+  return { font: bestFont, lines: bestLines };
 }
 
 function mediaRect() {
@@ -410,26 +455,23 @@ function drawOverlay() {
   for (const box of boxes) {
     const x = media.x + box.x * media.w;
     const y = media.y + box.y * media.h;
-    const w = Math.max(48, box.w * media.w);
-    const h = Math.max(18, box.h * media.h);
-    const label = box.translated || box.text;
-    let font = Math.min(22, Math.max(11, h * 0.72));
-    ctx.font = `600 ${font}px ui-sans-serif, system-ui, sans-serif`;
-    let lines = wrapText(ctx, label, w - 10);
-    while (font > 10 && lines.length * font * 1.15 > h + 8) {
-      font -= 1;
-      ctx.font = `600 ${font}px ui-sans-serif, system-ui, sans-serif`;
-      lines = wrapText(ctx, label, w - 10);
-    }
-    const boxH = Math.max(h, lines.length * font * 1.2 + 8);
+    const w = Math.max(8, box.w * media.w);
+    const h = Math.max(8, box.h * media.h);
+    const pad = Math.min(6, w * 0.06, h * 0.12);
+    const innerW = Math.max(4, w - pad * 2);
+    const innerH = Math.max(4, h - pad * 2);
+    const { font, lines } = fitBubbleText(ctx, box.translated || box.text, innerW, innerH);
+    const textH = lines.length * font * 1.2;
+    const textY = y + pad + Math.max(0, (innerH - textH) / 2);
 
     ctx.fillStyle = "rgba(12, 14, 20, 0.86)";
     ctx.beginPath();
-    ctx.roundRect(x - 2, y - 2, w + 4, boxH + 4, 4);
+    ctx.roundRect(x - 1, y - 1, w + 2, h + 2, 4);
     ctx.fill();
     ctx.fillStyle = "#f4f6fb";
+    ctx.font = `600 ${font}px ui-sans-serif, system-ui, sans-serif`;
     lines.forEach((line, index) => {
-      ctx.fillText(line, x + 5, y + font + index * font * 1.2);
+      ctx.fillText(line, x + pad, textY + font + index * font * 1.2);
     });
   }
 }

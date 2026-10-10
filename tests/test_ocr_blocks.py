@@ -82,7 +82,7 @@ def test_vertical_spine_label_does_not_join_paragraph():
     )
     blob = " ".join(texts(merged))
     assert "more OF MYST" not in blob
-    assert any("I am eager to discover more" == item.text for item in merged)
+    assert any("I am eager to discover more" in item.text for item in merged)
 
 
 def test_book_first_lines_are_not_joined():

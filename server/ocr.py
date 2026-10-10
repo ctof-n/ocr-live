@@ -86,6 +86,20 @@ def box_in_crop(box: TextBox, crop: tuple[float, float, float, float]) -> bool:
     return left <= cx <= 1 - right and top <= cy <= 1 - bottom
 
 
+def map_roi_box(
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    crop: tuple[float, float, float, float],
+) -> tuple[float, float, float, float]:
+    """Vision normalise les boîtes dans la ROI ; on les ramène à l’image entière."""
+    top, right, bottom, left = crop
+    roi_w = 1 - left - right
+    roi_h = 1 - top - bottom
+    return left + x * roi_w, top + y * roi_h, w * roi_w, h * roi_h
+
+
 def _apply_roi(request, crop: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
     top, right, bottom, left = normalize_crop(*crop)
     width = 1 - left - right
@@ -124,11 +138,18 @@ def _recognize(handler, source: str, crop: tuple[float, float, float, float] = (
         box = observation.boundingBox()
         width = float(box.size.width)
         height = float(box.size.height)
+        x, y, w, h = map_roi_box(
+            float(box.origin.x),
+            1.0 - float(box.origin.y) - height,
+            width,
+            height,
+            crop,
+        )
         item = TextBox(
-            x=float(box.origin.x),
-            y=1.0 - float(box.origin.y) - height,
-            w=width,
-            h=height,
+            x=x,
+            y=y,
+            w=w,
+            h=h,
             text=text,
             translated=text,
             confidence=confidence,
