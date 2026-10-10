@@ -29,6 +29,11 @@ _LINE_GAP = 0.8
 _CONTINUE_GAP = 1.4
 _LINE_OVERLAP = 0.4
 _COLUMN_SLACK = 0.045
+_PAGE_GUTTER = 0.08
+_PAGE_MIN_BOXES = 2
+_PAGE_MIN_SPAN = 0.08
+_PAGE_MAX_WIDTH = 0.52
+_SAME_LINE_GAP = 0.04
 
 
 @dataclass
@@ -131,7 +136,7 @@ def _recognize(handler, source: str, crop: tuple[float, float, float, float] = (
         if box_in_crop(item, crop):
             boxes.append(item)
 
-    boxes.sort(key=lambda item: (round(item.y, 3), item.x))
+    # Vision renvoie déjà l’ordre de lecture (page gauche, puis page droite).
     return boxes
 
 
@@ -207,7 +212,13 @@ def _join_block_text(texts: list[str]) -> str:
         return ""
     if any(_is_atomic_char(char) for text in parts for char in text):
         return "".join(parts)
-    return " ".join(parts)
+    joined = parts[0]
+    for part in parts[1:]:
+        if joined.endswith("-") and part[:1].islower():
+            joined = joined[:-1] + part
+        else:
+            joined = f"{joined} {part}"
+    return joined
 
 
 def _merge_boxes(boxes: list[TextBox]) -> TextBox:
@@ -246,6 +257,8 @@ def _similar_line_size(prev: TextBox, nxt: TextBox) -> bool:
 def _same_column(a: TextBox, b: TextBox) -> bool:
     if abs(a.x - b.x) <= _COLUMN_SLACK:
         return True
+    if abs((a.x + a.w) - (b.x + b.w)) <= 0.08:
+        return True
     return abs(a.x - b.x) <= 0.08 and (
         min(a.x + a.w, b.x + b.w) - max(a.x, b.x) > 0
     )
@@ -274,7 +287,7 @@ def _on_same_line(line: list[TextBox], box: TextBox) -> bool:
         gap = leftmost.x - (box.x + box.w)
     else:
         return True
-    return gap <= max(thin * 2.2, 0.02)
+    return 0 <= gap <= min(max(thin * 2.2, 0.02), _SAME_LINE_GAP)
 
 
 def _group_lines(boxes: list[TextBox]) -> list[list[TextBox]]:
@@ -351,16 +364,57 @@ def _merge_unfinished_paragraphs(blocks: list[TextBox]) -> list[TextBox]:
     return merged
 
 
-def merge_text_blocks(boxes: list[TextBox]) -> list[TextBox]:
-    """Regroupe les lignes d’un paragraphe, puis continue tant qu’il n’est pas clos."""
+def _vertical_span(boxes: list[TextBox]) -> float:
+    return max(box.y + box.h for box in boxes) - min(box.y for box in boxes)
+
+
+def _page_gutter(boxes: list[TextBox]) -> float | None:
+    """Milieu de la gouttière d’un livre : plus grand écart entre centres des lignes."""
+    centers = sorted(
+        box.x + box.w / 2 for box in boxes if 0.04 <= box.w < _PAGE_MAX_WIDTH
+    )
+    if len(centers) < _PAGE_MIN_BOXES * 2:
+        return None
+    best_gap = 0.0
+    split: float | None = None
+    for left_x, right_x in zip(centers, centers[1:]):
+        gap = right_x - left_x
+        if gap > best_gap:
+            best_gap = gap
+            split = (left_x + right_x) / 2
+    if split is None or best_gap < _PAGE_GUTTER:
+        return None
+    left = [box for box in boxes if box.x + box.w / 2 < split]
+    right = [box for box in boxes if box.x + box.w / 2 >= split]
+    if len(left) < _PAGE_MIN_BOXES or len(right) < _PAGE_MIN_BOXES:
+        return None
+    if _vertical_span(left) < _PAGE_MIN_SPAN or _vertical_span(right) < _PAGE_MIN_SPAN:
+        return None
+    return split
+
+
+def _merge_column(boxes: list[TextBox]) -> list[TextBox]:
     if len(boxes) <= 1:
-        return boxes
+        return list(boxes)
     line_boxes = [_merge_boxes(sorted(line, key=lambda item: item.x)) for line in _group_lines(boxes)]
     blocks: list[list[TextBox]] = []
     for line in line_boxes:
         if not _attach_to_block(blocks, line):
             blocks.append([line])
     return _merge_unfinished_paragraphs([_merge_boxes(block) for block in blocks])
+
+
+def merge_text_blocks(boxes: list[TextBox]) -> list[TextBox]:
+    """Regroupe les lignes, page gauche puis page droite si la mise en page est un livre."""
+    if len(boxes) <= 1:
+        return boxes
+    split = _page_gutter(boxes)
+    if split is None:
+        return _merge_column(boxes)
+    spanning = [box for box in boxes if box.x < split and box.x + box.w > split]
+    left = [box for box in boxes if box.x + box.w / 2 < split and box not in spanning]
+    right = [box for box in boxes if box.x + box.w / 2 >= split and box not in spanning]
+    return _merge_column(spanning) + _merge_column(left) + _merge_column(right)
 
 
 def recognize_image(

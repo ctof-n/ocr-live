@@ -69,6 +69,76 @@ def test_distant_hud_does_not_merge():
     assert len(merged) == 2
 
 
+def test_book_first_lines_are_not_joined():
+    merged = merge_text_blocks(
+        [
+            box(0.107, 0.106, 0.310, 0.057, "how could they be? For Spire has"),
+            box(0.523, 0.107, 0.285, 0.044, "As I walked, I felt as if the"),
+            box(0.105, 0.167, 0.225, 0.042, "never had any inhabitants."),
+            box(0.516, 0.156, 0.332, 0.044, "ghosts of a past civilization walked"),
+        ]
+    )
+    blob = " ".join(texts(merged))
+    assert "Spire has As I walked" not in blob
+    assert any(item.text.startswith("how could they be?") for item in merged)
+    assert any(item.text.startswith("As I walked") for item in merged)
+    assert texts(merged)[0].startswith("how could they be?")
+    assert any("As I walked" in item.text for item in merged[1:])
+
+
+def test_book_pages_read_left_then_right():
+    merged = merge_text_blocks(
+        [
+            box(0.06, 0.12, 0.36, 0.035, "Once upon a time the knight"),
+            box(0.56, 0.12, 0.36, 0.035, "A village stood beyond the"),
+            box(0.06, 0.17, 0.36, 0.035, "crossed the misty valley."),
+            box(0.56, 0.17, 0.34, 0.035, "river of forgotten names."),
+            box(0.06, 0.28, 0.36, 0.035, "The dragon waited in the"),
+            box(0.56, 0.28, 0.36, 0.035, "Nobody dared to ring the"),
+            box(0.06, 0.33, 0.34, 0.035, "shadow of the mountain."),
+            box(0.56, 0.33, 0.30, 0.035, "ancient bronze bell."),
+        ]
+    )
+    assert texts(merged) == [
+        "Once upon a time the knight crossed the misty valley.",
+        "The dragon waited in the shadow of the mountain.",
+        "A village stood beyond the river of forgotten names.",
+        "Nobody dared to ring the ancient bronze bell.",
+    ]
+
+
+def test_book_wraps_around_center_illustration():
+    merged = filter_min_words(
+        merge_text_blocks(
+            [
+                box(0.107, 0.106, 0.310, 0.057, "how could they be? For Spire has"),
+                box(0.105, 0.167, 0.225, 0.042, "never had any inhabitants."),
+                box(0.523, 0.107, 0.285, 0.044, "As I walked, I felt as if the"),
+                box(0.516, 0.156, 0.332, 0.044, "ghosts of a past civilization walked"),
+                box(0.685, 0.205, 0.135, 0.039, "with me. This"),
+                box(0.678, 0.255, 0.160, 0.044, "feeling was only"),
+                box(0.685, 0.306, 0.147, 0.044, "enhanced by the"),
+                box(0.682, 0.354, 0.131, 0.048, "beautiful har-"),
+                box(0.686, 0.404, 0.113, 0.034, "monic sounds"),
+                box(0.684, 0.453, 0.154, 0.042, "heard everywhere"),
+                box(0.684, 0.495, 0.150, 0.042, "I went. I would"),
+                box(0.689, 0.546, 0.114, 0.038, "have liked to"),
+                box(0.682, 0.596, 0.119, 0.037, "determine the"),
+                box(0.517, 0.637, 0.300, 0.060, "source of these sounds, simply for"),
+                box(0.520, 0.693, 0.258, 0.044, "my own edification, but other"),
+            ]
+        ),
+        3,
+    )
+    assert texts(merged)[0].startswith("how could they be?")
+    assert "inhabitants." in texts(merged)[0]
+    right = " ".join(texts(merged)[1:])
+    assert right.startswith("As I walked")
+    assert "harmonic sounds" in right
+    assert "determine the source" in right
+    assert "my own edification" in right
+
+
 def test_side_by_side_columns_do_not_merge():
     merged = merge_text_blocks(
         [
@@ -145,6 +215,9 @@ if __name__ == "__main__":
     test_lands_of_lore_dialogue_stays_one_block()
     test_short_last_line_stays_in_paragraph()
     test_distant_hud_does_not_merge()
+    test_book_first_lines_are_not_joined()
+    test_book_pages_read_left_then_right()
+    test_book_wraps_around_center_illustration()
     test_side_by_side_columns_do_not_merge()
     test_unfinished_sentence_merges_line_below()
     test_closed_sentence_does_not_merge_next_paragraph()

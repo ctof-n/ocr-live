@@ -371,8 +371,7 @@ function mediaRect() {
 function updateCaptions() {
   captionListEl.replaceChildren();
   if (!boxes.length) return;
-  const ordered = [...boxes].sort((a, b) => a.y - b.y || a.x - b.x);
-  for (const box of ordered) {
+  for (const box of boxes) {
     const row = document.createElement("article");
     row.className = "caption-row";
     const source = document.createElement("p");
