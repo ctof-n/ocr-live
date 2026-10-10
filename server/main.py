@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from server.capture import capture_window
+from server.ocr import normalize_crop
 from server.pipeline import LiveOcr
 from server.windows import list_windows
 
@@ -20,6 +21,8 @@ DEFAULT_FPS = 10
 MIN_WORDS_LIMIT = 3
 MAX_WORDS_LIMIT = 99
 DEFAULT_MIN_WORDS = 3
+MAX_CROP_PCT = 40
+DEFAULT_CROP_TOP = 8
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ocr-live")
@@ -52,6 +55,24 @@ def _min_words(ws: WebSocket) -> int:
     return max(MIN_WORDS_LIMIT, min(MAX_WORDS_LIMIT, value))
 
 
+def _crop_pct(ws: WebSocket, name: str, default: int = 0) -> int:
+    raw = ws.query_params.get(name)
+    try:
+        value = int(raw) if raw is not None else default
+    except ValueError:
+        value = default
+    return max(0, min(MAX_CROP_PCT, value))
+
+
+def _crop(ws: WebSocket) -> tuple[float, float, float, float]:
+    return normalize_crop(
+        _crop_pct(ws, "crop_top", DEFAULT_CROP_TOP) / 100,
+        _crop_pct(ws, "crop_right") / 100,
+        _crop_pct(ws, "crop_bottom") / 100,
+        _crop_pct(ws, "crop_left") / 100,
+    )
+
+
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html")
@@ -77,17 +98,19 @@ async def stream_window(ws: WebSocket) -> None:
     source, target = _langs(ws)
     fps = _fps(ws)
     min_words = _min_words(ws)
+    crop = _crop(ws)
     frame_interval = 1 / fps
     wid = int(window_id)
     ocr = LiveOcr()
     ocr_task: asyncio.Task | None = None
     logger.info(
-        "Stream fenêtre %s (%s → %s, %s fps, min %s mot(s))",
+        "Stream fenêtre %s (%s → %s, %s fps, min %s mot(s), crop %s)",
         wid,
         source,
         target,
         fps,
         min_words,
+        crop,
     )
     failures = 0
 
@@ -103,6 +126,7 @@ async def stream_window(ws: WebSocket) -> None:
                     src, dst = source, target
 
                     required_words = min_words
+                    region = crop
 
                     async def run_ocr() -> None:
                         try:
@@ -113,6 +137,7 @@ async def stream_window(ws: WebSocket) -> None:
                                 dst,
                                 jpeg,
                                 required_words,
+                                region,
                             )
                             await _send_ocr(ws, boxes)
                         except Exception:
@@ -148,9 +173,14 @@ async def analyze_frames(ws: WebSocket) -> None:
     await ws.accept()
     source, target = _langs(ws)
     min_words = _min_words(ws)
+    crop = _crop(ws)
     ocr = LiveOcr()
     logger.info(
-        "Analyse navigateur (%s → %s, min %s mot(s))", source, target, min_words
+        "Analyse navigateur (%s → %s, min %s mot(s), crop %s)",
+        source,
+        target,
+        min_words,
+        crop,
     )
 
     try:
@@ -162,7 +192,7 @@ async def analyze_frames(ws: WebSocket) -> None:
             if not ocr.should_run(jpeg):
                 continue
             boxes = await asyncio.to_thread(
-                ocr.run_jpeg, jpeg, source, target, min_words
+                ocr.run_jpeg, jpeg, source, target, min_words, crop
             )
             await _send_ocr(ws, boxes)
     except (WebSocketDisconnect, WebSocketDisconnected):

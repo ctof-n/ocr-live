@@ -7,7 +7,7 @@ import io
 import numpy as np
 from PIL import Image, ImageDraw
 
-from server.ocr import TextBox
+from server.ocr import TextBox, normalize_crop
 from server.trunic.detect import Glyph, detect_all
 from server.trunic.geometry import SEGMENTS, VERTICES, SEGMENT_ENDS
 from server.trunic.phonemes import tokens_to_english
@@ -56,14 +56,44 @@ def recognize_array(gray: np.ndarray) -> list[TextBox]:
     return boxes
 
 
-def recognize_jpeg(jpeg: bytes) -> list[TextBox]:
+def recognize_jpeg(
+    jpeg: bytes, crop: tuple[float, float, float, float] = (0, 0, 0, 0)
+) -> list[TextBox]:
     image = Image.open(io.BytesIO(jpeg)).convert("L")
     max_w = 1400
     if image.width > max_w:
         ratio = max_w / image.width
         image = image.resize((max_w, max(1, int(image.height * ratio))), Image.Resampling.BILINEAR)
+    top, right, bottom, left = normalize_crop(*crop)
+    width, height = image.size
+    x0 = int(round(left * width))
+    y0 = int(round(top * height))
+    x1 = int(round(width * (1 - right)))
+    y1 = int(round(height * (1 - bottom)))
+    if x1 - x0 < 8 or y1 - y0 < 8:
+        return []
+    if (x0, y0, x1, y1) != (0, 0, width, height):
+        image = image.crop((x0, y0, x1, y1))
     gray = np.asarray(image, dtype=np.uint8)
-    return recognize_array(gray)
+    boxes = recognize_array(gray)
+    inner_w = 1 - left - right
+    inner_h = 1 - top - bottom
+    if inner_w <= 0 or inner_h <= 0:
+        return []
+    remapped: list[TextBox] = []
+    for box in boxes:
+        remapped.append(
+            TextBox(
+                x=left + box.x * inner_w,
+                y=top + box.y * inner_h,
+                w=box.w * inner_w,
+                h=box.h * inner_h,
+                text=box.text,
+                translated=box.translated,
+                confidence=box.confidence,
+            )
+        )
+    return remapped
 
 
 def render_rune(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], mask: int, swap: bool = False) -> None:

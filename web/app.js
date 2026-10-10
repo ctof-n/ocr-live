@@ -16,6 +16,14 @@ const targetEl = document.querySelector("#target");
 const fpsEl = document.querySelector("#fps");
 const fpsValueEl = document.querySelector("#fps-value");
 const minWordsEl = document.querySelector("#min-words");
+const cropTopEl = document.querySelector("#crop-top");
+const cropBottomEl = document.querySelector("#crop-bottom");
+const cropLeftEl = document.querySelector("#crop-left");
+const cropRightEl = document.querySelector("#crop-right");
+const cropTopValueEl = document.querySelector("#crop-top-value");
+const cropBottomValueEl = document.querySelector("#crop-bottom-value");
+const cropLeftValueEl = document.querySelector("#crop-left-value");
+const cropRightValueEl = document.querySelector("#crop-right-value");
 
 const SETTINGS_KEY = "ocr-live.settings";
 
@@ -42,6 +50,10 @@ function saveSettings() {
     target: targetEl.value,
     fps: selectedFps(),
     minWords: selectedMinWords(),
+    cropTop: selectedCropPct(cropTopEl, 8),
+    cropBottom: selectedCropPct(cropBottomEl),
+    cropLeft: selectedCropPct(cropLeftEl),
+    cropRight: selectedCropPct(cropRightEl),
     windowId: windowsEl.value,
   };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -59,7 +71,12 @@ function applySettings() {
   if (Number.isFinite(settings.minWords)) {
     minWordsEl.value = String(Math.min(99, Math.max(3, Math.round(settings.minWords))));
   }
+  applyCropValue(cropTopEl, settings.cropTop, 8);
+  applyCropValue(cropBottomEl, settings.cropBottom, 0);
+  applyCropValue(cropLeftEl, settings.cropLeft, 0);
+  applyCropValue(cropRightEl, settings.cropRight, 0);
   syncFpsLabel();
+  syncCropLabels();
 }
 
 function restoreWindow(windowId) {
@@ -85,12 +102,47 @@ function selectedMinWords() {
   return Math.min(99, Math.max(3, Math.round(value)));
 }
 
+function selectedCropPct(el, fallback = 0) {
+  const value = Number(el.value);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(40, Math.max(0, Math.round(value)));
+}
+
+function applyCropValue(el, value, fallback) {
+  if (!Number.isFinite(value)) {
+    el.value = String(fallback);
+    return;
+  }
+  el.value = String(Math.min(40, Math.max(0, Math.round(value))));
+}
+
+function selectedCrop() {
+  return {
+    top: selectedCropPct(cropTopEl, 8) / 100,
+    bottom: selectedCropPct(cropBottomEl) / 100,
+    left: selectedCropPct(cropLeftEl) / 100,
+    right: selectedCropPct(cropRightEl) / 100,
+  };
+}
+
 function streamQuery() {
-  return `source=${encodeURIComponent(sourceEl.value)}&target=${encodeURIComponent(targetEl.value)}&fps=${selectedFps()}&min_words=${selectedMinWords()}`;
+  return (
+    `source=${encodeURIComponent(sourceEl.value)}&target=${encodeURIComponent(targetEl.value)}` +
+    `&fps=${selectedFps()}&min_words=${selectedMinWords()}` +
+    `&crop_top=${selectedCropPct(cropTopEl, 8)}&crop_bottom=${selectedCropPct(cropBottomEl)}` +
+    `&crop_left=${selectedCropPct(cropLeftEl)}&crop_right=${selectedCropPct(cropRightEl)}`
+  );
 }
 
 function syncFpsLabel() {
   fpsValueEl.value = String(selectedFps());
+}
+
+function syncCropLabels() {
+  cropTopValueEl.value = `${selectedCropPct(cropTopEl, 8)}%`;
+  cropBottomValueEl.value = `${selectedCropPct(cropBottomEl)}%`;
+  cropLeftValueEl.value = `${selectedCropPct(cropLeftEl)}%`;
+  cropRightValueEl.value = `${selectedCropPct(cropRightEl)}%`;
 }
 
 function analyzeIntervalMs() {
@@ -129,11 +181,20 @@ function restartAnalyzeSocket() {
 
 function applyMinWords() {
   minWordsEl.value = String(selectedMinWords());
+  restartActiveStream();
+}
+
+function restartActiveStream() {
   if (browserStream) {
     restartAnalyzeSocket();
     return;
   }
   if (socket && windowsEl.value) startNativeStream();
+}
+
+function applyCrop() {
+  syncCropLabels();
+  restartActiveStream();
 }
 
 function showNativeFrame() {
@@ -254,6 +315,25 @@ function startNativeStream() {
   });
 }
 
+function drawCropMask(ctx, media) {
+  const crop = selectedCrop();
+  const x = media.x + crop.left * media.w;
+  const y = media.y + crop.top * media.h;
+  const w = Math.max(0, media.w * (1 - crop.left - crop.right));
+  const h = Math.max(0, media.h * (1 - crop.top - crop.bottom));
+  if (crop.top + crop.bottom + crop.left + crop.right <= 0) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(media.x, media.y, media.w, media.h);
+  ctx.rect(x, y, w, h);
+  ctx.fillStyle = "rgba(8, 10, 16, 0.55)";
+  ctx.fill("evenodd");
+  ctx.strokeStyle = "rgba(110, 168, 254, 0.75)";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x + 0.75, y + 0.75, Math.max(0, w - 1.5), Math.max(0, h - 1.5));
+  ctx.restore();
+}
+
 function wrapText(ctx, text, maxWidth) {
   const words = text.split(/\s+/);
   const lines = [];
@@ -319,7 +399,9 @@ function drawOverlay() {
   ctx.clearRect(0, 0, width, height);
 
   const media = mediaRect();
-  if (!media || !boxes.length) return;
+  if (!media) return;
+  drawCropMask(ctx, media);
+  if (!boxes.length) return;
 
   for (const box of boxes) {
     const x = media.x + box.x * media.w;
@@ -417,6 +499,17 @@ minWordsEl.addEventListener("change", () => {
   applyMinWords();
   saveSettings();
 });
+for (const el of [cropTopEl, cropBottomEl, cropLeftEl, cropRightEl]) {
+  el.addEventListener("input", () => {
+    syncCropLabels();
+    saveSettings();
+    drawOverlay();
+  });
+  el.addEventListener("change", () => {
+    applyCrop();
+    saveSettings();
+  });
+}
 windowsEl.addEventListener("dblclick", startNativeStream);
 frameEl.addEventListener("load", drawOverlay);
 window.addEventListener("resize", drawOverlay);

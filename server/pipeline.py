@@ -32,15 +32,21 @@ class LiveOcr:
         self.last_run = now
         return True
 
-    def _recognize(self, source: str, jpeg: bytes | None, cgimage) -> list[TextBox]:
+    def _recognize(
+        self,
+        source: str,
+        jpeg: bytes | None,
+        cgimage,
+        crop: tuple[float, float, float, float],
+    ) -> list[TextBox]:
         if source == "tunic":
             if not jpeg:
                 return []
-            return recognize_trunic(jpeg)
+            return recognize_trunic(jpeg, crop)
         if cgimage is not None:
-            return recognize_image(cgimage, source)
+            return recognize_image(cgimage, source, crop)
         if jpeg:
-            return recognize_jpeg(jpeg, source)
+            return recognize_jpeg(jpeg, source, crop)
         return []
 
     def run_image(
@@ -50,11 +56,12 @@ class LiveOcr:
         target: str,
         jpeg: bytes | None = None,
         min_words: int = 3,
+        crop: tuple[float, float, float, float] = (0, 0, 0, 0),
     ) -> list[dict]:
         self.busy = True
         try:
             boxes = filter_min_words(
-                merge_text_blocks(self._recognize(source, jpeg, cgimage)),
+                merge_text_blocks(self._recognize(source, jpeg, cgimage, crop)),
                 min_words,
             )
             lang = "en" if source == "tunic" else source
@@ -64,6 +71,13 @@ class LiveOcr:
             self.busy = False
 
     def run_jpeg(
-        self, jpeg: bytes, source: str, target: str, min_words: int = 3
+        self,
+        jpeg: bytes,
+        source: str,
+        target: str,
+        min_words: int = 3,
+        crop: tuple[float, float, float, float] = (0, 0, 0, 0),
     ) -> list[dict]:
-        return self.run_image(None, source, target, jpeg=jpeg, min_words=min_words)
+        return self.run_image(
+            None, source, target, jpeg=jpeg, min_words=min_words, crop=crop
+        )

@@ -46,6 +46,31 @@
       </section>
 
       <section>
+        <h2>Zone OCR</h2>
+        <p class="hint">Ignore la barre de titre et les bords. La zone grisée n’est pas lue.</p>
+        <label for="crop-top">Haut</label>
+        <div class="row fps-row">
+          <input id="crop-top" type="range" min="0" max="40" value="8" />
+          <output id="crop-top-value" for="crop-top">8%</output>
+        </div>
+        <label for="crop-bottom">Bas</label>
+        <div class="row fps-row">
+          <input id="crop-bottom" type="range" min="0" max="40" value="0" />
+          <output id="crop-bottom-value" for="crop-bottom">0%</output>
+        </div>
+        <label for="crop-left">Gauche</label>
+        <div class="row fps-row">
+          <input id="crop-left" type="range" min="0" max="40" value="0" />
+          <output id="crop-left-value" for="crop-left">0%</output>
+        </div>
+        <label for="crop-right">Droite</label>
+        <div class="row fps-row">
+          <input id="crop-right" type="range" min="0" max="40" value="0" />
+          <output id="crop-right-value" for="crop-right">0%</output>
+        </div>
+      </section>
+
+      <section>
         <h2>Capture native</h2>
         <div class="row">
           <button id="refresh" type="button">Rafraîchir</button>

@@ -77,8 +77,12 @@ section {
   accent-color: var(--accent);
 }
 
-#fps-value {
-  min-width: 1.75rem;
+#fps-value,
+#crop-top-value,
+#crop-bottom-value,
+#crop-left-value,
+#crop-right-value {
+  min-width: 2.4rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--text);
