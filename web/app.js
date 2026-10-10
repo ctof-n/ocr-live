@@ -547,6 +547,18 @@ function paletteFor(box) {
   return palette;
 }
 
+function sameWording(left, right) {
+  const norm = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  return norm(left) === norm(right);
+}
+
+function needsBubble(box) {
+  if (sourceEl.value === "tunic") return Boolean(box.translated || box.text);
+  if (box.native) return false;
+  const translated = box.translated || box.text;
+  return Boolean(translated) && !sameWording(box.text, translated);
+}
+
 function mediaRect() {
   const media = frameEl.hidden ? videoEl : frameEl;
   if (!media || media.hidden) return null;
@@ -600,6 +612,7 @@ function drawOverlay() {
   if (!showBubblesEl.checked || !boxes.length) return;
 
   for (const box of boxes) {
+    if (!needsBubble(box)) continue;
     const x = media.x + box.x * media.w;
     const y = media.y + box.y * media.h;
     const w = Math.max(8, box.w * media.w);

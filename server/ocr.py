@@ -45,6 +45,7 @@ class TextBox:
     text: str
     translated: str
     confidence: float
+    native: bool = False
 
     def as_dict(self) -> dict:
         return asdict(self)

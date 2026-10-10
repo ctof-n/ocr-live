@@ -64,8 +64,7 @@ class LiveOcr:
                 merge_text_blocks(self._recognize(source, jpeg, cgimage, crop)),
                 min_words,
             )
-            lang = "en" if source == "tunic" else source
-            self.boxes = translate_boxes(boxes, lang, target)
+            self.boxes = translate_boxes(boxes, source, target)
             return [box.as_dict() for box in self.boxes]
         finally:
             self.busy = False
