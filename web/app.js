@@ -447,6 +447,15 @@ function contrastInk(bg) {
     : { r: 244, g: 246, b: 251 };
 }
 
+function darkestColor(pixels) {
+  if (!pixels.length) return null;
+  const ranked = pixels
+    .map((pixel) => ({ pixel, l: luma(pixel.r, pixel.g, pixel.b) }))
+    .sort((a, b) => a.l - b.l);
+  const take = Math.max(1, Math.ceil(ranked.length * 0.2));
+  return meanColor(ranked.slice(0, take).map((item) => item.pixel));
+}
+
 function splitPalette(data, width, height) {
   const pixels = [];
   const border = [];
@@ -504,8 +513,12 @@ function splitPalette(data, width, height) {
     if (colorDist2(pixel, c0) <= colorDist2(pixel, c1)) border0 += 1;
   }
   const c0IsBg = border.length ? border0 >= border.length / 2 : group0.length >= group1.length;
+  const ink = c0IsBg ? group1 : group0;
   const bg = c0IsBg ? c0 : c1;
   let fg = c0IsBg ? c1 : c0;
+  if (luma(fg.r, fg.g, fg.b) < luma(bg.r, bg.g, bg.b)) {
+    fg = darkestColor(ink) || fg;
+  }
   if (Math.abs(luma(fg.r, fg.g, fg.b) - luma(bg.r, bg.g, bg.b)) < 36) {
     fg = contrastInk(bg);
   }
