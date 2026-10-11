@@ -32,6 +32,7 @@ let socket = null;
 let objectUrl = null;
 let browserStream = null;
 let boxes = [];
+let captionSignature = "";
 let analyzeTimer = 0;
 let analyzeBusy = false;
 const grabCanvas = document.createElement("canvas");
@@ -234,6 +235,7 @@ function revokeFrame() {
 
 function clearOverlay() {
   boxes = [];
+  captionSignature = "";
   const ctx = overlayEl.getContext("2d");
   ctx.clearRect(0, 0, overlayEl.width, overlayEl.height);
   captionsEl.hidden = true;
@@ -275,7 +277,7 @@ function handleSocketMessage(event) {
     const payload = JSON.parse(event.data);
     if (payload.type === "error") setStatus(payload.message, true);
     if (payload.type === "ocr") {
-      boxes = payload.boxes || [];
+      applyOcrBoxes(payload.boxes || []);
       setStatus(`${boxes.length} texte${boxes.length > 1 ? "s" : ""}`);
       drawOverlay();
     }
@@ -569,6 +571,31 @@ function sameWording(left, right) {
   return norm(left) === norm(right);
 }
 
+function findPreviousBox(incoming) {
+  return boxes.find(
+    (item) =>
+      sameWording(item.text, incoming.text) &&
+      Math.abs(item.x - incoming.x) <= 0.05 &&
+      Math.abs(item.y - incoming.y) <= 0.05,
+  );
+}
+
+function applyOcrBoxes(incoming) {
+  boxes = incoming.map((box) => {
+    const prev = findPreviousBox(box);
+    if (!prev) return box;
+    const next = { ...box };
+    if (next.pending && (prev.translated || "").trim()) {
+      next.translated = prev.translated;
+      next.pending = false;
+      next.native = prev.native;
+    }
+    if (prev._palette) next._palette = prev._palette;
+    if (!next.align && prev.align) next.align = prev.align;
+    return next;
+  });
+}
+
 function needsBubble(box) {
   if (box.pending || !(box.translated || "").trim()) return false;
   if (sourceEl.value === "tunic") return Boolean(box.translated || box.text);
@@ -590,6 +617,11 @@ function mediaRect() {
 }
 
 function updateCaptions() {
+  const signature = boxes
+    .map((box) => `${box.text}\0${box.translated || ""}\0${box.pending ? "1" : "0"}`)
+    .join("\n");
+  if (signature === captionSignature) return;
+  captionSignature = signature;
   captionListEl.replaceChildren();
   if (!boxes.length) return;
   for (const box of boxes) {

@@ -23,6 +23,13 @@ def boxes_match(left: TextBox, right: TextBox, tol: float = _POS_TOL) -> bool:
     return abs(left.x - right.x) <= tol and abs(left.y - right.y) <= tol
 
 
+def _has_translation(box: TextBox) -> bool:
+    if box.native:
+        return True
+    translated = (box.translated or "").strip()
+    return bool(translated) and translated != box.text.strip()
+
+
 def stable_boxes(previous: list[TextBox], current: list[TextBox]) -> list[TextBox]:
     """Garde les boîtes déjà vues au même endroit (texte statique)."""
     if not previous:
@@ -78,13 +85,30 @@ class LiveOcr:
             return recognize_jpeg(jpeg, source, crop)
         return []
 
-    def _identified_payload(self, boxes: list[TextBox]) -> list[dict]:
-        payload = []
+    def _carry_translations(self, boxes: list[TextBox]) -> None:
+        previous = list(self.boxes)
         for box in boxes:
-            item = box.as_dict()
-            item["translated"] = ""
-            item["pending"] = True
-            payload.append(item)
+            match = next(
+                (item for item in previous if boxes_match(box, item) and _has_translation(item)),
+                None,
+            )
+            if match is None:
+                continue
+            box.translated = match.translated
+            box.native = match.native
+
+    def _box_payload(self, box: TextBox) -> dict:
+        item = box.as_dict()
+        if _has_translation(box):
+            item["pending"] = False
+            return item
+        item["translated"] = ""
+        item["pending"] = True
+        return item
+
+    def _identified_payload(self, boxes: list[TextBox]) -> list[dict]:
+        self._carry_translations(boxes)
+        payload = [self._box_payload(box) for box in boxes]
         self.boxes = boxes
         return payload
 
@@ -123,7 +147,15 @@ class LiveOcr:
         self, boxes: list[TextBox], source: str, target: str
     ) -> list[dict]:
         try:
-            return self._publish(boxes, source, target)
+            translated = translate_boxes(boxes, source, target)
+            for box in self._last_raw:
+                match = next((item for item in translated if boxes_match(box, item)), None)
+                if match is None:
+                    continue
+                box.translated = match.translated
+                box.native = match.native
+            self.boxes = list(self._last_raw)
+            return [self._box_payload(box) for box in self.boxes]
         finally:
             self.busy = False
 

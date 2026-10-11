@@ -33,6 +33,17 @@ def test_boxes_match_ignores_spacing_and_case():
     assert boxes_match(left, right)
 
 
+def test_identified_payload_keeps_previous_translation():
+    ocr = LiveOcr()
+    first = box(0.10, 0.20, 0.40, 0.08, "The hero walks slowly through the woods")
+    first.translated = "Le héros marche lentement dans les bois"
+    ocr.boxes = [first]
+    second = box(0.11, 0.21, 0.40, 0.08, "The hero walks slowly through the woods")
+    out = ocr._identified_payload([second])
+    assert out[0]["pending"] is False
+    assert out[0]["translated"] == "Le héros marche lentement dans les bois"
+
+
 def test_identified_payload_has_empty_translation():
     ocr = LiveOcr()
     raw = [box(0.10, 0.20, 0.40, 0.08, "The hero walks slowly through the woods")]
@@ -60,6 +71,7 @@ if __name__ == "__main__":
     test_same_text_same_place_is_stable()
     test_moved_or_changed_text_is_dropped()
     test_boxes_match_ignores_spacing_and_case()
+    test_identified_payload_keeps_previous_translation()
     test_identified_payload_has_empty_translation()
     test_confirm_promotes_frozen_ocr()
     print("ok")
