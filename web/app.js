@@ -31,6 +31,7 @@ const SETTINGS_KEY = "ocr-live.settings";
 let socket = null;
 let objectUrl = null;
 let browserStream = null;
+let captureMode = null;
 let boxes = [];
 let captionSignature = "";
 let analyzeTimer = 0;
@@ -209,18 +210,22 @@ function applyCrop() {
 }
 
 function showNativeFrame() {
+  captureMode = "native";
   placeholderEl.textContent = PLACEHOLDER_IDLE;
   placeholderEl.hidden = true;
   videoEl.hidden = true;
+  videoEl.srcObject = null;
   frameEl.hidden = false;
   captionsEl.hidden = false;
   requestAnimationFrame(drawOverlay);
 }
 
 function showBrowserVideo() {
+  captureMode = "browser";
   placeholderEl.textContent = PLACEHOLDER_IDLE;
   placeholderEl.hidden = true;
   frameEl.hidden = true;
+  frameEl.removeAttribute("src");
   videoEl.hidden = false;
   captionsEl.hidden = false;
   requestAnimationFrame(drawOverlay);
@@ -265,9 +270,12 @@ function stopAll() {
   stopBrowserStream();
   revokeFrame();
   clearOverlay();
+  captureMode = null;
   placeholderEl.textContent = PLACEHOLDER_IDLE;
   frameEl.hidden = true;
+  frameEl.removeAttribute("src");
   videoEl.hidden = true;
+  videoEl.srcObject = null;
   placeholderEl.hidden = false;
   setStatus("Arrêté");
 }
@@ -283,6 +291,7 @@ function handleSocketMessage(event) {
     }
     return;
   }
+  if (captureMode !== "native") return;
   revokeFrame();
   objectUrl = URL.createObjectURL(event.data);
   frameEl.src = objectUrl;
@@ -312,6 +321,7 @@ function startNativeStream() {
 
   saveSettings();
   stopAll();
+  captureMode = "native";
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   socket = new WebSocket(
     `${protocol}://${location.host}/ws/stream?window_id=${windowId}&${streamQuery()}`,
@@ -411,7 +421,8 @@ function fitBubbleText(ctx, text, maxWidth, maxHeight) {
 }
 
 function sourceMediaElement() {
-  return frameEl.hidden ? videoEl : frameEl;
+  if (captureMode === "browser" || (browserStream && frameEl.hidden)) return videoEl;
+  return frameEl;
 }
 
 function mediaPixelSize(media) {
@@ -604,7 +615,7 @@ function needsBubble(box) {
 }
 
 function mediaRect() {
-  const media = frameEl.hidden ? videoEl : frameEl;
+  const media = sourceMediaElement();
   if (!media || media.hidden) return null;
   const stage = stageEl.getBoundingClientRect();
   const rect = media.getBoundingClientRect();
