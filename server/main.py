@@ -135,16 +135,20 @@ async def stream_window(ws: WebSocket) -> None:
 
                     async def run_ocr() -> None:
                         try:
-                            boxes = await asyncio.to_thread(
-                                ocr.run_image,
-                                image,
+                            identified, stable = await asyncio.to_thread(
+                                ocr.collect,
                                 src,
-                                dst,
                                 jpeg,
+                                image,
                                 required_words,
                                 region,
                             )
-                            await _send_ocr(ws, boxes)
+                            await _send_ocr(ws, identified)
+                            if stable:
+                                boxes = await asyncio.to_thread(
+                                    ocr.translate_stable, stable, src, dst
+                                )
+                                await _send_ocr(ws, boxes)
                         except Exception:
                             logger.debug("OCR non envoyé", exc_info=True)
 
@@ -202,10 +206,15 @@ async def analyze_frames(ws: WebSocket) -> None:
                 continue
             if action != "ocr":
                 continue
-            boxes = await asyncio.to_thread(
-                ocr.run_jpeg, jpeg, source, target, min_words, crop
+            identified, stable = await asyncio.to_thread(
+                ocr.collect, source, jpeg, None, min_words, crop
             )
-            await _send_ocr(ws, boxes)
+            await _send_ocr(ws, identified)
+            if stable:
+                boxes = await asyncio.to_thread(
+                    ocr.translate_stable, stable, source, target
+                )
+                await _send_ocr(ws, boxes)
     except (WebSocketDisconnect, WebSocketDisconnected):
         logger.info("Analyse déconnectée")
     except Exception:

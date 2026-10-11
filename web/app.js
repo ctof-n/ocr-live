@@ -40,8 +40,6 @@ const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
 const DEFAULT_BUBBLE_BG = "rgba(12, 14, 20, 0.86)";
 const DEFAULT_BUBBLE_FG = "#f4f6fb";
 const PLACEHOLDER_IDLE = "Choisis une fenêtre à gauche";
-const PLACEHOLDER_BROWSER =
-  "Capture macOS active. La fenêtre reste sur le Bureau ; les traductions s’affichent ci-dessous.";
 
 function loadSettings() {
   try {
@@ -210,8 +208,6 @@ function applyCrop() {
 }
 
 function showNativeFrame() {
-  stageEl.classList.remove("browser-capture");
-  videoEl.classList.remove("capture-only");
   placeholderEl.textContent = PLACEHOLDER_IDLE;
   placeholderEl.hidden = true;
   videoEl.hidden = true;
@@ -221,10 +217,8 @@ function showNativeFrame() {
 }
 
 function showBrowserVideo() {
-  stageEl.classList.add("browser-capture");
-  videoEl.classList.add("capture-only");
-  placeholderEl.textContent = PLACEHOLDER_BROWSER;
-  placeholderEl.hidden = false;
+  placeholderEl.textContent = PLACEHOLDER_IDLE;
+  placeholderEl.hidden = true;
   frameEl.hidden = true;
   videoEl.hidden = false;
   captionsEl.hidden = false;
@@ -269,8 +263,6 @@ function stopAll() {
   stopBrowserStream();
   revokeFrame();
   clearOverlay();
-  stageEl.classList.remove("browser-capture");
-  videoEl.classList.remove("capture-only");
   placeholderEl.textContent = PLACEHOLDER_IDLE;
   frameEl.hidden = true;
   videoEl.hidden = true;
@@ -578,10 +570,10 @@ function sameWording(left, right) {
 }
 
 function needsBubble(box) {
+  if (box.pending || !(box.translated || "").trim()) return false;
   if (sourceEl.value === "tunic") return Boolean(box.translated || box.text);
   if (box.native) return false;
-  const translated = box.translated || box.text;
-  return Boolean(translated) && !sameWording(box.text, translated);
+  return !sameWording(box.text, box.translated);
 }
 
 function mediaRect() {
@@ -608,7 +600,13 @@ function updateCaptions() {
     source.textContent = box.text;
     const target = document.createElement("p");
     target.className = "caption-target";
-    target.textContent = box.translated || box.text;
+    const translated = (box.translated || "").trim();
+    if (translated) {
+      target.textContent = translated;
+    } else {
+      target.classList.add("pending");
+      target.textContent = "…";
+    }
     row.append(source, target);
     captionListEl.append(row);
   }
@@ -630,8 +628,6 @@ function drawOverlay() {
   const ctx = overlayEl.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
-
-  if (browserStream) return;
 
   const media = mediaRect();
   if (!media) return;

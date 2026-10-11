@@ -78,9 +78,54 @@ class LiveOcr:
             return recognize_jpeg(jpeg, source, crop)
         return []
 
+    def _identified_payload(self, boxes: list[TextBox]) -> list[dict]:
+        payload = []
+        for box in boxes:
+            item = box.as_dict()
+            item["translated"] = ""
+            item["pending"] = True
+            payload.append(item)
+        self.boxes = boxes
+        return payload
+
     def _publish(self, boxes: list[TextBox], source: str, target: str) -> list[dict]:
         self.boxes = translate_boxes(boxes, source, target)
         return [box.as_dict() for box in self.boxes]
+
+    def collect(
+        self,
+        source: str,
+        jpeg: bytes | None = None,
+        cgimage=None,
+        min_words: int = 3,
+        crop: tuple[float, float, float, float] = (0, 0, 0, 0),
+    ) -> tuple[list[dict], list[TextBox]]:
+        """OCR sans traduire. Laisse busy=True s’il reste une traduction à faire."""
+        self.busy = True
+        try:
+            boxes = filter_min_words(
+                merge_text_blocks(self._recognize(source, jpeg, cgimage, crop)),
+                min_words,
+            )
+            stable = stable_boxes(self._prev_raw, boxes)
+            self._last_raw = boxes
+            self._awaiting_confirm = not bool(self._prev_raw)
+            self._prev_raw = boxes
+            identified = self._identified_payload(boxes)
+            if not stable:
+                self.busy = False
+            return identified, stable
+        except Exception:
+            self.busy = False
+            raise
+
+    def translate_stable(
+        self, boxes: list[TextBox], source: str, target: str
+    ) -> list[dict]:
+        try:
+            return self._publish(boxes, source, target)
+        finally:
+            self.busy = False
 
     def confirm_static(self, source: str, target: str) -> list[dict] | None:
         """Image inchangée : le dernier OCR est du texte statique."""
@@ -103,19 +148,12 @@ class LiveOcr:
         min_words: int = 3,
         crop: tuple[float, float, float, float] = (0, 0, 0, 0),
     ) -> list[dict]:
-        self.busy = True
-        try:
-            boxes = filter_min_words(
-                merge_text_blocks(self._recognize(source, jpeg, cgimage, crop)),
-                min_words,
-            )
-            stable = stable_boxes(self._prev_raw, boxes)
-            self._last_raw = boxes
-            self._awaiting_confirm = not bool(self._prev_raw)
-            self._prev_raw = boxes
-            return self._publish(stable, source, target)
-        finally:
-            self.busy = False
+        identified, stable = self.collect(
+            source, jpeg=jpeg, cgimage=cgimage, min_words=min_words, crop=crop
+        )
+        if not stable:
+            return identified
+        return self.translate_stable(stable, source, target)
 
     def run_jpeg(
         self,
@@ -124,7 +162,5 @@ class LiveOcr:
         target: str,
         min_words: int = 3,
         crop: tuple[float, float, float, float] = (0, 0, 0, 0),
-    ) -> list[dict]:
-        return self.run_image(
-            None, source, target, jpeg=jpeg, min_words=min_words, crop=crop
-        )
+    ) -> tuple[list[dict], list[TextBox]]:
+        return self.collect(source, jpeg=jpeg, min_words=min_words, crop=crop)
