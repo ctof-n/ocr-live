@@ -1,5 +1,6 @@
 from server.ocr import (
     TextBox,
+    _detect_align,
     _is_bullet_line,
     _is_ui_label,
     filter_min_words,
@@ -319,6 +320,38 @@ def test_same_line_fragments_group():
     assert texts(merged) == ["The hero walks slowly through town"]
 
 
+def test_detects_left_center_right_align():
+    left = [
+        box(0.10, 0.20, 0.42, 0.04, "The hero walks slowly through the"),
+        box(0.10, 0.26, 0.28, 0.04, "ancient forest today"),
+        box(0.10, 0.32, 0.22, 0.04, "looking for a way"),
+    ]
+    assert _detect_align(left) == "left"
+    right = [
+        box(0.18, 0.20, 0.42, 0.04, "The hero walks slowly through the"),
+        box(0.32, 0.26, 0.28, 0.04, "ancient forest today"),
+        box(0.38, 0.32, 0.22, 0.04, "looking for a way"),
+    ]
+    assert _detect_align(right) == "right"
+    center = [
+        box(0.30, 0.20, 0.20, 0.04, "Chapter One"),
+        box(0.24, 0.26, 0.32, 0.04, "The forest awakens"),
+        box(0.28, 0.32, 0.24, 0.04, "at first light"),
+    ]
+    assert _detect_align(center) == "center"
+
+
+def test_merged_block_keeps_right_align():
+    merged = merge_text_blocks(
+        [
+            box(0.20, 0.30, 0.40, 0.035, "If we keep walking toward the river"),
+            box(0.30, 0.36, 0.30, 0.035, "we might find the village."),
+        ]
+    )
+    assert len(merged) == 1
+    assert merged[0].align == "right"
+
+
 def test_filter_still_drops_short_and_numeric():
     kept = filter_min_words(
         [
@@ -352,5 +385,7 @@ if __name__ == "__main__":
     test_is_bullet_line_markers()
     test_quoted_utterances_stay_separate()
     test_same_line_fragments_group()
+    test_detects_left_center_right_align()
+    test_merged_block_keeps_right_align()
     test_filter_still_drops_short_and_numeric()
     print("ok")

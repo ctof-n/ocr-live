@@ -84,6 +84,7 @@ class TextBox:
     translated: str
     confidence: float
     native: bool = False
+    align: str = "left"
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -281,6 +282,41 @@ def _join_block_text(texts: list[str]) -> str:
     return joined
 
 
+def _detect_align(boxes: list[TextBox]) -> str:
+    """Gauche, centre ou droite d’après le bord des lignes empilées."""
+    if not boxes:
+        return "left"
+    if len(boxes) == 1:
+        return boxes[0].align if boxes[0].align in {"left", "center", "right"} else "left"
+    mids_y = [box.y + box.h / 2 for box in boxes]
+    thin = min(box.h for box in boxes)
+    if thin > 0 and max(mids_y) - min(mids_y) < thin * 0.5:
+        return "left"
+    lefts = [box.x for box in boxes]
+    rights = [box.x + box.w for box in boxes]
+    left_spread = max(lefts) - min(lefts)
+    right_spread = max(rights) - min(rights)
+    mids_x = [box.x + box.w / 2 for box in boxes]
+    mid_spread = max(mids_x) - min(mids_x)
+    scale = max(0.02, min(box.w for box in boxes))
+    threshold = max(0.012, scale * 0.18)
+    left_flush = left_spread <= threshold
+    right_flush = right_spread <= threshold
+    if left_flush and not right_flush:
+        return "left"
+    if right_flush and not left_flush:
+        return "right"
+    if not left_flush and not right_flush and mid_spread <= threshold:
+        return "center"
+    if left_spread < right_spread * 0.55:
+        return "left"
+    if right_spread < left_spread * 0.55:
+        return "right"
+    if mid_spread <= max(left_spread, right_spread):
+        return "center"
+    return "left"
+
+
 def _merge_boxes(boxes: list[TextBox]) -> TextBox:
     x = min(box.x for box in boxes)
     y = min(box.y for box in boxes)
@@ -295,6 +331,7 @@ def _merge_boxes(boxes: list[TextBox]) -> TextBox:
         text=text,
         translated=text,
         confidence=max(box.confidence for box in boxes),
+        align=_detect_align(boxes),
     )
 
 

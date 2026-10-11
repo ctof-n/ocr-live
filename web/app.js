@@ -651,16 +651,20 @@ function drawOverlay() {
     const textH = lines.length * font * 1.2;
     const textY = y + pad + Math.max(0, (innerH - textH) / 2);
     const palette = paletteFor(box);
+    const align = box.align === "center" || box.align === "right" ? box.align : "left";
+    const textX = align === "right" ? x + w - pad : align === "center" ? x + w / 2 : x + pad;
 
     ctx.fillStyle = palette ? rgbCss(palette.bg) : DEFAULT_BUBBLE_BG;
     ctx.beginPath();
     ctx.roundRect(x - 1, y - 1, w + 2, h + 2, 4);
     ctx.fill();
     ctx.fillStyle = palette ? rgbCss(palette.fg) : DEFAULT_BUBBLE_FG;
+    ctx.textAlign = align;
     ctx.font = `600 ${font}px ui-sans-serif, system-ui, sans-serif`;
     lines.forEach((line, index) => {
-      ctx.fillText(line, x + pad, textY + font + index * font * 1.2);
+      ctx.fillText(line, textX, textY + font + index * font * 1.2);
     });
+    ctx.textAlign = "left";
   }
 }
 
