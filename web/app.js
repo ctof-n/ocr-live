@@ -39,6 +39,9 @@ const sampleCanvas = document.createElement("canvas");
 const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
 const DEFAULT_BUBBLE_BG = "rgba(12, 14, 20, 0.86)";
 const DEFAULT_BUBBLE_FG = "#f4f6fb";
+const PLACEHOLDER_IDLE = "Choisis une fenêtre à gauche";
+const PLACEHOLDER_BROWSER =
+  "Capture macOS active. La fenêtre reste sur le Bureau ; les traductions s’affichent ci-dessous.";
 
 function loadSettings() {
   try {
@@ -207,6 +210,9 @@ function applyCrop() {
 }
 
 function showNativeFrame() {
+  stageEl.classList.remove("browser-capture");
+  videoEl.classList.remove("capture-only");
+  placeholderEl.textContent = PLACEHOLDER_IDLE;
   placeholderEl.hidden = true;
   videoEl.hidden = true;
   frameEl.hidden = false;
@@ -215,7 +221,10 @@ function showNativeFrame() {
 }
 
 function showBrowserVideo() {
-  placeholderEl.hidden = true;
+  stageEl.classList.add("browser-capture");
+  videoEl.classList.add("capture-only");
+  placeholderEl.textContent = PLACEHOLDER_BROWSER;
+  placeholderEl.hidden = false;
   frameEl.hidden = true;
   videoEl.hidden = false;
   captionsEl.hidden = false;
@@ -260,6 +269,9 @@ function stopAll() {
   stopBrowserStream();
   revokeFrame();
   clearOverlay();
+  stageEl.classList.remove("browser-capture");
+  videoEl.classList.remove("capture-only");
+  placeholderEl.textContent = PLACEHOLDER_IDLE;
   frameEl.hidden = true;
   videoEl.hidden = true;
   placeholderEl.hidden = false;
@@ -618,6 +630,8 @@ function drawOverlay() {
   const ctx = overlayEl.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
+
+  if (browserStream) return;
 
   const media = mediaRect();
   if (!media) return;

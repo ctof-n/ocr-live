@@ -120,7 +120,12 @@ async def stream_window(ws: WebSocket) -> None:
             if frame:
                 failures = 0
                 await ws.send_bytes(frame.jpeg)
-                if ocr.should_run(frame.jpeg) and (ocr_task is None or ocr_task.done()):
+                action = ocr.next_action(frame.jpeg)
+                if action == "confirm":
+                    boxes = await asyncio.to_thread(ocr.confirm_static, source, target)
+                    if boxes is not None:
+                        await _send_ocr(ws, boxes)
+                elif action == "ocr" and (ocr_task is None or ocr_task.done()):
                     image = frame.image
                     jpeg = frame.jpeg
                     src, dst = source, target
@@ -189,7 +194,13 @@ async def analyze_frames(ws: WebSocket) -> None:
             jpeg = message.get("bytes")
             if not jpeg:
                 continue
-            if not ocr.should_run(jpeg):
+            action = ocr.next_action(jpeg)
+            if action == "confirm":
+                boxes = await asyncio.to_thread(ocr.confirm_static, source, target)
+                if boxes is not None:
+                    await _send_ocr(ws, boxes)
+                continue
+            if action != "ocr":
                 continue
             boxes = await asyncio.to_thread(
                 ocr.run_jpeg, jpeg, source, target, min_words, crop

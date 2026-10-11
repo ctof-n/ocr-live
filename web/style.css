@@ -159,6 +159,22 @@ main {
   border-radius: 12px;
 }
 
+#stage.browser-capture {
+  flex: 0 0 auto;
+  min-height: 0;
+  height: auto;
+  padding: 0.85rem 1rem;
+}
+
+#browser-video.capture-only {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
 #frame,
 #browser-video {
   display: block;
@@ -188,6 +204,12 @@ main {
 
 #captions:not([hidden]) {
   display: flex;
+}
+
+#stage.browser-capture ~ #captions:not([hidden]) {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
 }
 
 .caption-heading {

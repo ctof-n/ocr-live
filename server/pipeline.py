@@ -1,4 +1,4 @@
-"""OCR + traduction, seulement quand l'image a changé."""
+"""OCR + traduction, seulement le texte qui reste stable à l’écran."""
 
 from __future__ import annotations
 
@@ -10,6 +10,28 @@ from server.translate import translate_boxes
 from server.trunic.recognize import recognize_jpeg as recognize_trunic
 
 OCR_EVERY_SECONDS = 0.55
+_POS_TOL = 0.05
+
+
+def _norm_text(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def boxes_match(left: TextBox, right: TextBox, tol: float = _POS_TOL) -> bool:
+    if _norm_text(left.text) != _norm_text(right.text):
+        return False
+    return abs(left.x - right.x) <= tol and abs(left.y - right.y) <= tol
+
+
+def stable_boxes(previous: list[TextBox], current: list[TextBox]) -> list[TextBox]:
+    """Garde les boîtes déjà vues au même endroit (texte statique)."""
+    if not previous:
+        return []
+    return [
+        box
+        for box in current
+        if any(boxes_match(box, seen) for seen in previous)
+    ]
 
 
 class LiveOcr:
@@ -18,19 +40,26 @@ class LiveOcr:
         self.last_run = 0.0
         self.busy = False
         self.boxes: list[TextBox] = []
+        self._prev_raw: list[TextBox] = []
+        self._last_raw: list[TextBox] = []
+        self._awaiting_confirm = False
 
-    def should_run(self, payload: bytes) -> bool:
+    def next_action(self, payload: bytes) -> str:
+        """'ocr', 'confirm' (image figée) ou 'skip'."""
         if self.busy:
-            return False
+            return "skip"
         digest = hashlib.md5(payload).hexdigest()
         now = time.monotonic()
         if digest == self.last_hash:
-            return False
+            return "confirm" if self._awaiting_confirm else "skip"
         if now - self.last_run < OCR_EVERY_SECONDS:
-            return False
+            return "skip"
         self.last_hash = digest
         self.last_run = now
-        return True
+        return "ocr"
+
+    def should_run(self, payload: bytes) -> bool:
+        return self.next_action(payload) == "ocr"
 
     def _recognize(
         self,
@@ -49,6 +78,22 @@ class LiveOcr:
             return recognize_jpeg(jpeg, source, crop)
         return []
 
+    def _publish(self, boxes: list[TextBox], source: str, target: str) -> list[dict]:
+        self.boxes = translate_boxes(boxes, source, target)
+        return [box.as_dict() for box in self.boxes]
+
+    def confirm_static(self, source: str, target: str) -> list[dict] | None:
+        """Image inchangée : le dernier OCR est du texte statique."""
+        if self.busy or not self._awaiting_confirm or not self._last_raw:
+            return None
+        self.busy = True
+        try:
+            self._awaiting_confirm = False
+            self._prev_raw = list(self._last_raw)
+            return self._publish(list(self._last_raw), source, target)
+        finally:
+            self.busy = False
+
     def run_image(
         self,
         cgimage,
@@ -64,8 +109,11 @@ class LiveOcr:
                 merge_text_blocks(self._recognize(source, jpeg, cgimage, crop)),
                 min_words,
             )
-            self.boxes = translate_boxes(boxes, source, target)
-            return [box.as_dict() for box in self.boxes]
+            stable = stable_boxes(self._prev_raw, boxes)
+            self._last_raw = boxes
+            self._awaiting_confirm = not bool(self._prev_raw)
+            self._prev_raw = boxes
+            return self._publish(stable, source, target)
         finally:
             self.busy = False
 
