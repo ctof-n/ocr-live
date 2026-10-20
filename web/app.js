@@ -19,6 +19,11 @@ const archiveCountEl = document.querySelector("#archive-count");
 const archiveDialogEl = document.querySelector("#archive-dialog");
 const archiveDialogImageEl = document.querySelector("#archive-dialog-image");
 const archiveDialogTextsEl = document.querySelector("#archive-dialog-texts");
+const archiveDialogStageEl = document.querySelector("#archive-dialog-stage");
+const archiveDialogOverlayEl = document.querySelector("#archive-dialog-overlay");
+const archiveDialogCaptionsEl = document.querySelector("#archive-dialog-captions");
+const archiveDialogStatusEl = document.querySelector("#archive-dialog-status");
+const archiveDialogRetryBtn = document.querySelector("#archive-dialog-retry");
 const placeholderEl = document.querySelector("#placeholder");
 const stageEl = document.querySelector("#stage");
 const sourceEl = document.querySelector("#source");
@@ -342,12 +347,86 @@ function openArchiveList() {
   }
 }
 
+let archiveView = null;
+let archiveViewToken = 0;
+
+function setArchiveDialogStatus(text, isError = false) {
+  archiveDialogStatusEl.textContent = text;
+  archiveDialogStatusEl.classList.toggle("error", isError);
+}
+
 function openArchiveEntry(entry) {
+  archiveView = { id: entry.id, boxes: [], dropped: [] };
   archiveDialogImageEl.src = archiveSrc(entry.id);
   archiveDialogTextsEl.textContent = entry.texts.join("\n");
+  archiveDialogTextsEl.hidden = false;
+  archiveDialogCaptionsEl.replaceChildren();
   if (typeof archiveDialogEl.showModal === "function") {
     archiveDialogEl.showModal();
   }
+  drawArchiveOverlay();
+  analyzeArchiveEntry().catch(() => {});
+}
+
+async function analyzeArchiveEntry() {
+  if (!archiveView) return;
+  const view = archiveView;
+  const token = ++archiveViewToken;
+  archiveDialogRetryBtn.disabled = true;
+  setArchiveDialogStatus(`OCR + traduction (${sourceEl.value} → ${targetEl.value})…`);
+  try {
+    const response = await fetch(`/api/captures/${view.id}/analyze?${streamQuery()}`, {
+      method: "POST",
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (token !== archiveViewToken || archiveView !== view) return;
+    view.boxes = data.boxes || [];
+    view.dropped = data.dropped || [];
+    const kept = view.boxes.length;
+    const dropped = view.dropped.length;
+    setArchiveDialogStatus(
+      `${kept} texte${kept > 1 ? "s" : ""} traduit${kept > 1 ? "s" : ""}` +
+        ` · ${dropped} écarté${dropped > 1 ? "s" : ""} (< ${selectedMinWords()} mots)` +
+        ` · ${sourceEl.value} → ${targetEl.value}`,
+    );
+    archiveDialogTextsEl.hidden = true;
+    archiveDialogCaptionsEl.replaceChildren(...view.boxes.map(captionRow));
+    drawArchiveOverlay();
+  } catch (error) {
+    if (token !== archiveViewToken) return;
+    setArchiveDialogStatus(`Analyse impossible : ${error.message}`, true);
+  } finally {
+    if (token === archiveViewToken) archiveDialogRetryBtn.disabled = false;
+  }
+}
+
+function drawOutlines(ctx, list, rect, color, dash) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash(dash);
+  for (const box of list) {
+    ctx.strokeRect(
+      rect.x + box.x * rect.w + 0.5,
+      rect.y + box.y * rect.h + 0.5,
+      Math.max(1, box.w * rect.w - 1),
+      Math.max(1, box.h * rect.h - 1),
+    );
+  }
+  ctx.restore();
+}
+
+function drawArchiveOverlay() {
+  const ctx = prepareCanvas(archiveDialogOverlayEl, archiveDialogStageEl);
+  if (!archiveView || !archiveDialogEl.open) return;
+  const image = archiveDialogImageEl;
+  if (!image.complete || !image.naturalWidth) return;
+  const rect = elementRect(image, archiveDialogStageEl);
+  drawCropMask(ctx, rect);
+  drawOutlines(ctx, archiveView.dropped, rect, "rgba(224, 82, 82, 0.85)", [4, 3]);
+  drawOutlines(ctx, archiveView.boxes, rect, "rgba(110, 168, 254, 0.9)", []);
+  if (showBubblesEl.checked) drawBubbles(ctx, archiveView.boxes, rect, image);
 }
 
 function upsertArchiveCard(entry) {
@@ -693,8 +772,7 @@ function splitPalette(data, width, height) {
   return { bg, fg };
 }
 
-function sampleBoxColors(box) {
-  const media = sourceMediaElement();
+function sampleBoxColors(box, media) {
   if (!media || media.hidden) return null;
   const size = mediaPixelSize(media);
   if (!size.w || !size.h) return null;
@@ -721,9 +799,9 @@ function sampleBoxColors(box) {
   }
 }
 
-function paletteFor(box) {
+function paletteFor(box, media = sourceMediaElement()) {
   if (box._palette) return box._palette;
-  const palette = sampleBoxColors(box);
+  const palette = sampleBoxColors(box, media);
   if (palette) box._palette = palette;
   return palette;
 }
@@ -765,10 +843,8 @@ function needsBubble(box) {
   return !sameWording(box.text, box.translated);
 }
 
-function mediaRect() {
-  const media = sourceMediaElement();
-  if (!media || media.hidden) return null;
-  const stage = stageEl.getBoundingClientRect();
+function elementRect(media, container) {
+  const stage = container.getBoundingClientRect();
   const rect = media.getBoundingClientRect();
   return {
     x: rect.left - stage.left,
@@ -776,6 +852,31 @@ function mediaRect() {
     w: rect.width,
     h: rect.height,
   };
+}
+
+function mediaRect() {
+  const media = sourceMediaElement();
+  if (!media || media.hidden) return null;
+  return elementRect(media, stageEl);
+}
+
+function captionRow(box) {
+  const row = document.createElement("article");
+  row.className = "caption-row";
+  const source = document.createElement("p");
+  source.className = "caption-source";
+  source.textContent = box.text;
+  const target = document.createElement("p");
+  target.className = "caption-target";
+  const translated = (box.translated || "").trim();
+  if (translated) {
+    target.textContent = translated;
+  } else {
+    target.classList.add("pending");
+    target.textContent = "…";
+  }
+  row.append(source, target);
+  return row;
 }
 
 function updateCaptions() {
@@ -786,49 +887,38 @@ function updateCaptions() {
   captionSignature = signature;
   captionListEl.replaceChildren();
   if (!boxes.length) return;
-  for (const box of boxes) {
-    const row = document.createElement("article");
-    row.className = "caption-row";
-    const source = document.createElement("p");
-    source.className = "caption-source";
-    source.textContent = box.text;
-    const target = document.createElement("p");
-    target.className = "caption-target";
-    const translated = (box.translated || "").trim();
-    if (translated) {
-      target.textContent = translated;
-    } else {
-      target.classList.add("pending");
-      target.textContent = "…";
-    }
-    row.append(source, target);
-    captionListEl.append(row);
-  }
+  captionListEl.replaceChildren(...boxes.map(captionRow));
   captionsEl.hidden = false;
+}
+
+function prepareCanvas(canvas, container) {
+  const dpr = window.devicePixelRatio || 1;
+  const width = container.clientWidth;
+  const height = container.clientHeight;
+  canvas.width = Math.max(1, Math.round(width * dpr));
+  canvas.height = Math.max(1, Math.round(height * dpr));
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  return ctx;
 }
 
 function drawOverlay() {
   updateCaptions();
   void captionsEl.offsetHeight;
 
-  const dpr = window.devicePixelRatio || 1;
-  const width = stageEl.clientWidth;
-  const height = stageEl.clientHeight;
-  overlayEl.width = Math.max(1, Math.round(width * dpr));
-  overlayEl.height = Math.max(1, Math.round(height * dpr));
-  overlayEl.style.width = `${width}px`;
-  overlayEl.style.height = `${height}px`;
-
-  const ctx = overlayEl.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, width, height);
-
+  const ctx = prepareCanvas(overlayEl, stageEl);
   const media = mediaRect();
   if (!media) return;
   drawCropMask(ctx, media);
   if (!showBubblesEl.checked || !boxes.length) return;
+  drawBubbles(ctx, boxes, media, sourceMediaElement());
+}
 
-  for (const box of boxes) {
+function drawBubbles(ctx, list, media, source) {
+  for (const box of list) {
     if (!needsBubble(box)) continue;
     const x = media.x + box.x * media.w;
     const y = media.y + box.y * media.h;
@@ -840,7 +930,7 @@ function drawOverlay() {
     const { font, lines } = fitBubbleText(ctx, box.translated || box.text, innerW, innerH);
     const textH = lines.length * font * 1.2;
     const textY = y + pad + Math.max(0, (innerH - textH) / 2);
-    const palette = paletteFor(box);
+    const palette = paletteFor(box, source);
     const align = box.align === "center" || box.align === "right" ? box.align : "left";
     const textX = align === "right" ? x + w - pad : align === "center" ? x + w / 2 : x + pad;
 
@@ -947,9 +1037,20 @@ archiveSelectBtn.addEventListener("click", () => setArchiveSelecting(!archiveSel
 archiveSelectAllBtn.addEventListener("click", toggleArchiveSelectAll);
 archiveDeleteBtn.addEventListener("click", deleteSelectedArchive);
 archiveListDialogEl.addEventListener("close", () => setArchiveSelecting(false));
+archiveDialogRetryBtn.addEventListener("click", () => {
+  analyzeArchiveEntry().catch(() => {});
+});
+archiveDialogImageEl.addEventListener("load", drawArchiveOverlay);
+archiveDialogEl.addEventListener("close", () => {
+  archiveView = null;
+  archiveViewToken += 1;
+});
 windowsEl.addEventListener("dblclick", startNativeStream);
 frameEl.addEventListener("load", drawOverlay);
-window.addEventListener("resize", drawOverlay);
+window.addEventListener("resize", () => {
+  drawOverlay();
+  drawArchiveOverlay();
+});
 
 applySettings();
 loadWindows().catch((error) => setStatus(error.message, true));

@@ -389,13 +389,67 @@ button.danger:hover:not(:disabled) {
   background: rgba(224, 82, 82, 0.3);
 }
 
-#archive-dialog img {
-  display: block;
-  width: 100%;
-  max-height: min(70vh, 720px);
-  object-fit: contain;
+#archive-dialog-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
   background: #0b0d12;
   border-radius: 8px;
+  overflow: hidden;
+}
+
+#archive-dialog-stage img {
+  display: block;
+  max-width: 100%;
+  max-height: min(70vh, 720px);
+}
+
+#archive-dialog-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+#archive-dialog-status {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+#archive-dialog-status.error {
+  color: var(--danger);
+}
+
+.archive-legend {
+  display: flex;
+  gap: 1rem;
+  margin: 0.5rem 0 0;
+}
+
+.archive-legend span::before {
+  content: "";
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.6rem;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+  border: 1px solid rgba(110, 168, 254, 0.9);
+}
+
+.archive-legend .legend-dropped::before {
+  border: 1px dashed rgba(224, 82, 82, 0.85);
+}
+
+#archive-dialog-captions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+#archive-dialog-texts[hidden] {
+  display: none;
 }
 
 #archive-dialog-texts {

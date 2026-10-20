@@ -171,6 +171,25 @@ class LiveOcr:
         finally:
             self.busy = False
 
+    def analyze_still(
+        self,
+        jpeg: bytes,
+        source: str,
+        target: str,
+        min_words: int = 3,
+        crop: tuple[float, float, float, float] = (0, 0, 0, 0),
+    ) -> dict:
+        """Image figée (capture archivée) : même OCR, même filtre, traduction directe.
+
+        Renvoie aussi les blocs écartés par le seuil de mots, pour le débogage.
+        """
+        merged = merge_text_blocks(self._recognize(source, jpeg, None, crop))
+        kept = filter_min_words(merged, min_words)
+        kept_ids = {id(box) for box in kept}
+        dropped = [box.as_dict() for box in merged if id(box) not in kept_ids]
+        boxes = self._publish(kept, source, target) if kept else []
+        return {"boxes": boxes, "dropped": dropped}
+
     def run_image(
         self,
         cgimage,

@@ -134,9 +134,19 @@
     </dialog>
     <dialog id="archive-dialog" class="modal">
       <form method="dialog" class="modal-header">
+        <span id="archive-dialog-status"></span>
+        <button id="archive-dialog-retry" type="button">Retraduire</button>
         <button type="submit" value="close">Retour</button>
       </form>
-      <img id="archive-dialog-image" alt="Capture identifiée" />
+      <div id="archive-dialog-stage">
+        <img id="archive-dialog-image" alt="Capture identifiée" />
+        <canvas id="archive-dialog-overlay"></canvas>
+      </div>
+      <p class="hint archive-legend">
+        <span class="legend-kept">Traduit</span>
+        <span class="legend-dropped">Écarté (trop peu de mots)</span>
+      </p>
+      <div id="archive-dialog-captions"></div>
       <p id="archive-dialog-texts"></p>
     </dialog>
 

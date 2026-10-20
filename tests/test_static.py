@@ -66,6 +66,29 @@ def test_confirm_promotes_frozen_ocr():
     assert ocr.confirm_static("auto", "fr") is None
 
 
+def test_analyze_still_translates_without_waiting_for_stability(monkeypatch):
+    import server.pipeline as pipeline
+
+    raw = [
+        box(0.10, 0.20, 0.40, 0.08, "The hero walks slowly through the woods"),
+        box(0.10, 0.80, 0.10, 0.05, "Menu"),
+    ]
+    monkeypatch.setattr(pipeline.LiveOcr, "_recognize", lambda self, *args: list(raw))
+    monkeypatch.setattr(pipeline, "merge_text_blocks", lambda boxes: boxes)
+
+    def fake_translate(boxes, source, target):
+        for item in boxes:
+            item.translated = f"[{target}] {item.text}"
+        return boxes
+
+    monkeypatch.setattr(pipeline, "translate_boxes", fake_translate)
+    result = LiveOcr().analyze_still(b"jpeg", "en", "fr", 3)
+    assert [item["translated"] for item in result["boxes"]] == [
+        "[fr] The hero walks slowly through the woods"
+    ]
+    assert [item["text"] for item in result["dropped"]] == ["Menu"]
+
+
 if __name__ == "__main__":
     test_first_sight_is_not_stable()
     test_same_text_same_place_is_stable()

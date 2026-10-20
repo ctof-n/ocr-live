@@ -252,3 +252,35 @@ def test_delete_removes_several_captures(tmp_path: Path):
     assert [item["id"] for item in CaptureStore(tmp_path).list_captures()] == [second["id"]]
     again = store.ingest(_jpeg(0), [{"text": "The hero walks slowly through the woods"}])
     assert again is not None
+
+
+def test_analyze_route_replays_pipeline_on_archived_jpeg(tmp_path: Path, monkeypatch):
+    import asyncio
+
+    import pytest
+    from fastapi import HTTPException
+    from starlette.requests import Request
+
+    import server.main as main
+
+    store = CaptureStore(tmp_path)
+    jpeg = _jpeg(7)
+    record = store.ingest(jpeg, [{"text": "A sentence long enough to keep"}])
+    monkeypatch.setattr(main, "captures", store)
+    calls = []
+
+    def fake_analyze(self, data, source, target, min_words, crop):
+        calls.append((data, source, target, min_words, crop))
+        return {"boxes": [], "dropped": []}
+
+    monkeypatch.setattr(main.LiveOcr, "analyze_still", fake_analyze)
+    query = b"source=ja&target=fr&min_words=4&crop_top=10"
+    request = Request({"type": "http", "query_string": query, "headers": []})
+    result = asyncio.run(main.api_analyze_capture(record["id"], request))
+    assert result == {"boxes": [], "dropped": []}
+    assert calls[0][0] == jpeg
+    assert calls[0][1:4] == ("ja", "fr", 4)
+    assert calls[0][4][0] == 0.10
+    with pytest.raises(HTTPException) as missing:
+        asyncio.run(main.api_analyze_capture("0" * 64, request))
+    assert missing.value.status_code == 404

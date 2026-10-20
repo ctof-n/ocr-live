@@ -5,7 +5,8 @@ import json
 import logging
 from pathlib import Path
 
-from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from starlette.requests import HTTPConnection
 from starlette.websockets import WebSocketDisconnected, WebSocketState
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -37,13 +38,13 @@ app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 captures = CaptureStore(CAPTURES_DIR)
 
 
-def _langs(ws: WebSocket) -> tuple[str, str]:
+def _langs(ws: HTTPConnection) -> tuple[str, str]:
     source = ws.query_params.get("source") or "auto"
     target = ws.query_params.get("target") or "fr"
     return source, target
 
 
-def _fps(ws: WebSocket) -> int:
+def _fps(ws: HTTPConnection) -> int:
     raw = ws.query_params.get("fps")
     try:
         value = int(raw) if raw is not None else DEFAULT_FPS
@@ -52,7 +53,7 @@ def _fps(ws: WebSocket) -> int:
     return max(MIN_FPS, min(MAX_FPS, value))
 
 
-def _min_words(ws: WebSocket) -> int:
+def _min_words(ws: HTTPConnection) -> int:
     raw = ws.query_params.get("min_words")
     try:
         value = int(raw) if raw is not None else DEFAULT_MIN_WORDS
@@ -61,7 +62,7 @@ def _min_words(ws: WebSocket) -> int:
     return max(MIN_WORDS_LIMIT, min(MAX_WORDS_LIMIT, value))
 
 
-def _crop_pct(ws: WebSocket, name: str, default: int = 0) -> int:
+def _crop_pct(ws: HTTPConnection, name: str, default: int = 0) -> int:
     raw = ws.query_params.get(name)
     try:
         value = int(raw) if raw is not None else default
@@ -70,7 +71,7 @@ def _crop_pct(ws: WebSocket, name: str, default: int = 0) -> int:
     return max(0, min(MAX_CROP_PCT, value))
 
 
-def _crop(ws: WebSocket) -> tuple[float, float, float, float]:
+def _crop(ws: HTTPConnection) -> tuple[float, float, float, float]:
     return normalize_crop(
         _crop_pct(ws, "crop_top", DEFAULT_CROP_TOP) / 100,
         _crop_pct(ws, "crop_right") / 100,
@@ -112,6 +113,19 @@ async def api_delete_captures(payload: dict = Body(...)) -> dict:
         raise HTTPException(status_code=422, detail="ids doit être une liste")
     removed = await asyncio.to_thread(captures.delete, ids)
     return {"deleted": removed}
+
+
+@app.post("/api/captures/{image_id}/analyze")
+async def api_analyze_capture(image_id: str, request: Request) -> dict:
+    """Rejoue OCR + traduction sur une capture archivée, avec les réglages courants."""
+    path = captures.jpeg_path(image_id)
+    if path is None:
+        raise HTTPException(status_code=404)
+    source, target = _langs(request)
+    jpeg = await asyncio.to_thread(path.read_bytes)
+    return await asyncio.to_thread(
+        LiveOcr().analyze_still, jpeg, source, target, _min_words(request), _crop(request)
+    )
 
 
 @app.get("/api/captures/{image_id}.jpg")
