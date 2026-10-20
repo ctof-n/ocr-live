@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ocr-live</title>
-    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="/static/style.css?v=__ASSET_VERSION__" />
   </head>
   <body>
     <aside>
@@ -98,6 +98,11 @@
         <button id="browser-capture" type="button">Choisir une fenêtre…</button>
       </section>
 
+      <section>
+        <h2>Captures identifiées</h2>
+        <button id="archive-open" type="button" disabled>Aucune capture</button>
+      </section>
+
       <p id="status">En attente</p>
     </aside>
 
@@ -116,7 +121,40 @@
         <div id="caption-list"></div>
       </section>
     </main>
+    <dialog id="archive-list-dialog" class="modal">
+      <form method="dialog" class="modal-header">
+        <h2>Captures identifiées</h2>
+        <span id="archive-count"></span>
+        <button id="archive-select-all" type="button" hidden>Tout sélectionner</button>
+        <button id="archive-delete" type="button" class="danger" hidden disabled>Supprimer</button>
+        <button id="archive-select" type="button">Sélectionner</button>
+        <button type="submit" value="close">Fermer</button>
+      </form>
+      <div id="archive-list"></div>
+    </dialog>
+    <dialog id="archive-dialog" class="modal">
+      <form method="dialog" class="modal-header">
+        <button type="submit" value="close">Retour</button>
+      </form>
+      <img id="archive-dialog-image" alt="Capture identifiée" />
+      <p id="archive-dialog-texts"></p>
+    </dialog>
 
-    <script type="module" src="/static/app.js"></script>
+    <script type="module" src="/static/app.js?v=__ASSET_VERSION__"></script>
+    <script>
+      (() => {
+        const version = "__ASSET_VERSION__";
+        const poll = async () => {
+          try {
+            const response = await fetch("/api/version", { cache: "no-store" });
+            const data = await response.json();
+            if (data.version && data.version !== version) location.reload();
+          } catch {
+            /* serveur coupé le temps d’un reload */
+          }
+        };
+        setInterval(poll, 1500);
+      })();
+    </script>
   </body>
 </html>

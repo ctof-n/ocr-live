@@ -9,6 +9,16 @@ const videoEl = document.querySelector("#browser-video");
 const overlayEl = document.querySelector("#overlay");
 const captionsEl = document.querySelector("#captions");
 const captionListEl = document.querySelector("#caption-list");
+const archiveOpenBtn = document.querySelector("#archive-open");
+const archiveListDialogEl = document.querySelector("#archive-list-dialog");
+const archiveSelectBtn = document.querySelector("#archive-select");
+const archiveSelectAllBtn = document.querySelector("#archive-select-all");
+const archiveDeleteBtn = document.querySelector("#archive-delete");
+const archiveListEl = document.querySelector("#archive-list");
+const archiveCountEl = document.querySelector("#archive-count");
+const archiveDialogEl = document.querySelector("#archive-dialog");
+const archiveDialogImageEl = document.querySelector("#archive-dialog-image");
+const archiveDialogTextsEl = document.querySelector("#archive-dialog-texts");
 const placeholderEl = document.querySelector("#placeholder");
 const stageEl = document.querySelector("#stage");
 const sourceEl = document.querySelector("#source");
@@ -238,6 +248,145 @@ function revokeFrame() {
   }
 }
 
+const archiveEntries = new Map();
+const archiveSelection = new Set();
+let archiveSelecting = false;
+
+function archiveSrc(id) {
+  return `/api/captures/${id}.jpg`;
+}
+
+function syncArchiveCount() {
+  const n = archiveListEl.children.length;
+  const label = n ? `${n} capture${n > 1 ? "s" : ""}` : "";
+  archiveCountEl.textContent = label;
+  archiveOpenBtn.textContent = n ? `Voir les ${label}` : "Aucune capture";
+  archiveOpenBtn.disabled = n === 0;
+  syncArchiveSelection();
+}
+
+function syncArchiveSelection() {
+  const n = archiveSelection.size;
+  const total = archiveListEl.children.length;
+  archiveListEl.classList.toggle("selecting", archiveSelecting);
+  archiveSelectBtn.textContent = archiveSelecting ? "Annuler" : "Sélectionner";
+  archiveSelectBtn.disabled = !archiveSelecting && total === 0;
+  archiveSelectAllBtn.hidden = !archiveSelecting;
+  archiveSelectAllBtn.textContent =
+    total && n === total ? "Tout désélectionner" : "Tout sélectionner";
+  archiveDeleteBtn.hidden = !archiveSelecting;
+  archiveDeleteBtn.disabled = n === 0;
+  archiveDeleteBtn.textContent = n ? `Supprimer (${n})` : "Supprimer";
+  for (const card of archiveListEl.children) {
+    const selected = archiveSelection.has(card.dataset.id);
+    card.classList.toggle("selected", selected);
+    card.setAttribute("aria-pressed", archiveSelecting ? String(selected) : "false");
+  }
+}
+
+function setArchiveSelecting(on) {
+  archiveSelecting = on;
+  archiveSelection.clear();
+  syncArchiveSelection();
+}
+
+function toggleArchiveSelection(id) {
+  if (archiveSelection.has(id)) archiveSelection.delete(id);
+  else archiveSelection.add(id);
+  syncArchiveSelection();
+}
+
+function toggleArchiveSelectAll() {
+  const ids = [...archiveListEl.children].map((card) => card.dataset.id);
+  const all = ids.length && ids.every((id) => archiveSelection.has(id));
+  archiveSelection.clear();
+  if (!all) for (const id of ids) archiveSelection.add(id);
+  syncArchiveSelection();
+}
+
+function removeArchiveCards(ids) {
+  for (const id of ids) {
+    archiveEntries.delete(id);
+    archiveSelection.delete(id);
+    archiveListEl.querySelector(`[data-id="${id}"]`)?.remove();
+  }
+  syncArchiveCount();
+}
+
+async function deleteSelectedArchive() {
+  const ids = [...archiveSelection];
+  if (!ids.length) return;
+  const label = `${ids.length} capture${ids.length > 1 ? "s" : ""}`;
+  if (!window.confirm(`Supprimer définitivement ${label} ?`)) return;
+  archiveDeleteBtn.disabled = true;
+  try {
+    const response = await fetch("/api/captures/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    removeArchiveCards(data.deleted || []);
+    setStatus(`${label} supprimée${ids.length > 1 ? "s" : ""}`);
+    setArchiveSelecting(false);
+  } catch (error) {
+    setStatus(`Suppression impossible : ${error.message}`, true);
+    syncArchiveSelection();
+  }
+}
+
+function openArchiveList() {
+  if (typeof archiveListDialogEl.showModal === "function") {
+    archiveListDialogEl.showModal();
+  }
+}
+
+function openArchiveEntry(entry) {
+  archiveDialogImageEl.src = archiveSrc(entry.id);
+  archiveDialogTextsEl.textContent = entry.texts.join("\n");
+  if (typeof archiveDialogEl.showModal === "function") {
+    archiveDialogEl.showModal();
+  }
+}
+
+function upsertArchiveCard(entry) {
+  if (!entry || !entry.id) return;
+  archiveEntries.set(entry.id, entry);
+  const existing = archiveListEl.querySelector(`[data-id="${entry.id}"]`);
+  if (existing) {
+    existing.querySelector("p").textContent = (entry.texts || []).join(" · ");
+    existing.querySelector("img").alt = entry.texts[0] || "Capture identifiée";
+    return;
+  }
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "archive-card";
+  card.dataset.id = entry.id;
+  const image = document.createElement("img");
+  image.loading = "lazy";
+  image.src = archiveSrc(entry.id);
+  image.alt = entry.texts[0] || "Capture identifiée";
+  const label = document.createElement("p");
+  label.textContent = (entry.texts || []).join(" · ");
+  card.append(image, label);
+  card.addEventListener("click", () => {
+    if (archiveSelecting) toggleArchiveSelection(card.dataset.id);
+    else openArchiveEntry(archiveEntries.get(card.dataset.id));
+  });
+  archiveListEl.append(card);
+  syncArchiveCount();
+}
+
+async function loadArchive() {
+  const response = await fetch("/api/captures");
+  const data = await response.json();
+  archiveEntries.clear();
+  archiveListEl.replaceChildren();
+  for (const entry of data.captures || []) upsertArchiveCard(entry);
+  syncArchiveCount();
+}
+
 function clearOverlay() {
   boxes = [];
   captionSignature = "";
@@ -283,7 +432,9 @@ function stopAll() {
 function handleSocketMessage(event) {
   if (typeof event.data === "string") {
     const payload = JSON.parse(event.data);
+    if (payload.type === "frame" || payload.type === "snapshot") return;
     if (payload.type === "error") setStatus(payload.message, true);
+    if (payload.type === "archive") upsertArchiveCard(payload);
     if (payload.type === "ocr") {
       applyOcrBoxes(payload.boxes || []);
       setStatus(`${boxes.length} texte${boxes.length > 1 ? "s" : ""}`);
@@ -791,9 +942,15 @@ for (const el of [cropTopEl, cropBottomEl, cropLeftEl, cropRightEl]) {
     saveSettings();
   });
 }
+archiveOpenBtn.addEventListener("click", openArchiveList);
+archiveSelectBtn.addEventListener("click", () => setArchiveSelecting(!archiveSelecting));
+archiveSelectAllBtn.addEventListener("click", toggleArchiveSelectAll);
+archiveDeleteBtn.addEventListener("click", deleteSelectedArchive);
+archiveListDialogEl.addEventListener("close", () => setArchiveSelecting(false));
 windowsEl.addEventListener("dblclick", startNativeStream);
 frameEl.addEventListener("load", drawOverlay);
 window.addEventListener("resize", drawOverlay);
 
 applySettings();
 loadWindows().catch((error) => setStatus(error.message, true));
+loadArchive().catch(() => {});
